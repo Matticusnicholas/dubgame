@@ -68,6 +68,25 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
     if (game?.current_clip_id) appendSeenClipIds([game.current_clip_id]);
   }, [game?.current_clip_id]);
 
+  // Fire a cleanup beacon when the host's tab closes/navigates away, so any
+  // voice recordings in Storage for this game get wiped (handles the
+  // closed-the-tab-and-never-came-back case where /advance never reaches
+  // the finished→lobby cleanup branch).
+  useEffect(() => {
+    if (!hostToken) return;
+    function beaconCleanup() {
+      try {
+        const fd = new FormData();
+        fd.append("host_token", hostToken!);
+        navigator.sendBeacon(`/api/games/${code}/cleanup-voice`, fd);
+      } catch {
+        /* best-effort, browser is unloading */
+      }
+    }
+    window.addEventListener("pagehide", beaconCleanup);
+    return () => window.removeEventListener("pagehide", beaconCleanup);
+  }, [hostToken, code]);
+
   // Speculative Kokoro prefetch — kick off generation as soon as a submission
   // arrives or is edited, so the audio is already cooked by reveal time.
   useEffect(() => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { useGame } from "@/lib/use-game";
 import { clipPublicUrl } from "@/lib/supabase-browser";
 import { ClipPlayer } from "@/components/ClipPlayer";
@@ -156,12 +157,44 @@ function Centered({ children }: { children: React.ReactNode }) {
 }
 
 function Lobby({ code, players, onStart, disabled }: { code: string; players: { id: string; nickname: string }[]; onStart: () => void; disabled: boolean }) {
+  const [joinUrl, setJoinUrl] = useState<string>("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setJoinUrl(`${window.location.origin}/?code=${code}`);
+  }, [code]);
+
+  function goFullscreen() {
+    if (typeof document === "undefined") return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void document.documentElement.requestFullscreen();
+    }
+  }
+
   return (
     <section className="grid md:grid-cols-2 gap-8 items-start">
-      <div className="rounded-3xl border border-white/10 bg-white/5 p-8 text-center">
-        <p className="uppercase tracking-widest text-sm opacity-60 mb-3">Join code</p>
-        <p className="text-7xl md:text-9xl font-black tracking-[0.15em] font-mono">{code}</p>
-        <p className="mt-4 opacity-70">Open the site on your phone and enter this code.</p>
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-8 flex flex-col items-center text-center gap-6">
+        <div>
+          <p className="uppercase tracking-widest text-sm opacity-60 mb-3">Join code</p>
+          <p className="text-7xl md:text-9xl font-black tracking-[0.15em] font-mono">{code}</p>
+        </div>
+        {joinUrl && (
+          <div className="bg-white p-4 rounded-2xl">
+            <QRCodeSVG value={joinUrl} size={180} level="M" includeMargin={false} />
+          </div>
+        )}
+        <p className="text-sm opacity-70 max-w-xs">Scan with your phone, or open the site and type the code.</p>
+        <button
+          onClick={goFullscreen}
+          className="text-xs uppercase tracking-widest opacity-60 hover:opacity-100 underline"
+        >
+          ⛶ Fullscreen on this display
+        </button>
+        <p className="text-xs opacity-40 max-w-xs">
+          On a TV? In Chrome, use the ⋮ menu → Cast → pick your TV. Or plug your laptop into the TV with HDMI and hit Fullscreen above.
+        </p>
       </div>
       <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
         <h2 className="text-2xl font-bold mb-4">Players ({players.length})</h2>

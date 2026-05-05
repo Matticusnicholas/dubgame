@@ -1,17 +1,38 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { isValidCode } from "@/lib/code";
 
 export default function Home() {
+  return (
+    <Suspense fallback={<main className="min-h-screen" />}>
+      <HomeInner />
+    </Suspense>
+  );
+}
+
+function HomeInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [hosting, setHosting] = useState(false);
   const [hostNickname, setHostNickname] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [nickname, setNickname] = useState("");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const nicknameInputRef = useRef<HTMLInputElement>(null);
+
+  // Prefill from ?code=ABCDE (e.g. via QR scan from the host's lobby).
+  useEffect(() => {
+    const param = searchParams.get("code");
+    if (param) {
+      const upper = param.toUpperCase();
+      setJoinCode(upper);
+      // Send focus to nickname input so the phone keyboard pops open.
+      setTimeout(() => nicknameInputRef.current?.focus(), 50);
+    }
+  }, [searchParams]);
 
   async function host(e: React.FormEvent) {
     e.preventDefault();
@@ -125,6 +146,7 @@ export default function Home() {
             <label className="flex flex-col gap-1">
               <span className="text-xs uppercase tracking-wider opacity-60">Nickname</span>
               <input
+                ref={nicknameInputRef}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 maxLength={20}

@@ -4,6 +4,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import { useGame } from "@/lib/use-game";
 import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
+import { VoicePicker } from "@/components/VoicePicker";
 
 export default function PlayPage(props: { params: Promise<{ code: string }> }) {
   const { code } = use(props.params);
@@ -109,13 +110,17 @@ function Submit({ code, round, playerToken, playerId, submissions }: {
 }) {
   const mine = submissions.find((s) => s.round === round && s.player_id === playerId);
   const [phrase, setPhrase] = useState(mine?.phrase ?? "");
+  const [voice, setVoice] = useState<string>(mine?.voice ?? "random");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const submitted = !!mine;
 
   // Sync local input to a fresh round
   useEffect(() => {
-    if (mine) setPhrase(mine.phrase);
+    if (mine) {
+      setPhrase(mine.phrase);
+      setVoice(mine.voice ?? "random");
+    }
   }, [mine?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function send(e: React.FormEvent) {
@@ -127,7 +132,7 @@ function Submit({ code, round, playerToken, playerId, submissions }: {
       const res = await fetch(`/api/games/${code}/submit`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ player_token: playerToken, phrase: phrase.trim() }),
+        body: JSON.stringify({ player_token: playerToken, phrase: phrase.trim(), voice }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
@@ -156,6 +161,10 @@ function Submit({ code, round, playerToken, playerId, submissions }: {
         <div className="flex justify-between text-xs opacity-50">
           <span>{phrase.length} / {PHRASE_MAX_LEN}</span>
           {submitted && <span>✓ submitted — you can edit until reveal</span>}
+        </div>
+        <div className="flex flex-col gap-2">
+          <span className="text-xs uppercase tracking-wider opacity-60">Voice</span>
+          <VoicePicker value={voice} onChange={setVoice} disabled={busy} />
         </div>
         <button
           type="submit"

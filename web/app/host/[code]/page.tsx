@@ -5,7 +5,8 @@ import { QRCodeSVG } from "qrcode.react";
 import { useGame } from "@/lib/use-game";
 import { clipPublicUrl } from "@/lib/supabase-browser";
 import { ClipPlayer } from "@/components/ClipPlayer";
-import { defaultVoice, speak, cancelSpeech } from "@/lib/tts";
+import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
+import { VoicePicker } from "@/components/VoicePicker";
 import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 
@@ -308,7 +309,10 @@ function SubmittingHost(props: {
             playerToken={props.playerToken}
             playerId={props.playerId}
             round={props.round}
-            existing={props.submissions.find((s) => s.player_id === props.playerId)?.phrase ?? ""}
+            existing={(() => {
+              const s = props.submissions.find((s) => s.player_id === props.playerId);
+              return s ? { phrase: s.phrase, voice: s.voice ?? "random" } : null;
+            })()}
           />
         )}
 
@@ -329,17 +333,19 @@ function HostSubmitForm(props: {
   playerToken: string;
   playerId: string;
   round: number;
-  existing: string;
+  existing: { phrase: string; voice: string } | null;
 }) {
-  const [phrase, setPhrase] = useState(props.existing);
+  const [phrase, setPhrase] = useState(props.existing?.phrase ?? "");
+  const [voice, setVoice] = useState<string>(props.existing?.voice ?? "random");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   // Sync if the existing submission changes (e.g., new round).
   useEffect(() => {
-    setPhrase(props.existing);
-  }, [props.existing, props.round]);
+    setPhrase(props.existing?.phrase ?? "");
+    setVoice(props.existing?.voice ?? "random");
+  }, [props.existing?.phrase, props.existing?.voice, props.round]);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -350,7 +356,7 @@ function HostSubmitForm(props: {
       const res = await fetch(`/api/games/${props.code}/submit`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ player_token: props.playerToken, phrase: phrase.trim() }),
+        body: JSON.stringify({ player_token: props.playerToken, phrase: phrase.trim(), voice }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
@@ -379,6 +385,7 @@ function HostSubmitForm(props: {
         {submitted && <span>✓ submitted (you can edit)</span>}
         {savedAt && <span>saved</span>}
       </div>
+      <VoicePicker value={voice} onChange={setVoice} disabled={busy} />
       <button
         type="submit"
         disabled={busy || phrase.trim().length === 0}
@@ -415,8 +422,9 @@ function RevealHost(props: {
     if (!current) return;
     const generation = playGenerationRef.current;
     setSpeaking(true);
-    const voice = await defaultVoice();
-    await speak(current.phrase, { voice, rate: 1.0 });
+    const browserVoice = await defaultVoice();
+    const variant = resolveVoice(current.voice ?? "random");
+    await speak(current.phrase, { voice: browserVoice, rate: variant.rate, pitch: variant.pitch });
     setSpeaking(false);
     // If the user moved on (clicked Next, or a new play started), skip resume.
     if (generation !== playGenerationRef.current) return;
@@ -477,7 +485,7 @@ function RevealHost(props: {
         )}
         {speaking && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 px-6 py-3 rounded-xl text-xl">
-            🗣️  {current.phrase}
+            {resolveVoice(current.voice ?? "random").emoji}  {current.phrase}
           </div>
         )}
       </div>

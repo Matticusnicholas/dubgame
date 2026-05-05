@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 const Body = z.object({
   player_token: z.string(),
   phrase: z.string().trim().min(1).max(PHRASE_MAX_LEN),
+  voice: z.string().min(1).max(32).default("random"),
 });
 
 export async function POST(
@@ -37,6 +38,7 @@ export async function POST(
       round: game.current_round,
       player_id: player.id,
       phrase: body.phrase,
+      voice: body.voice,
     },
     { onConflict: "game_id,round,player_id" },
   );

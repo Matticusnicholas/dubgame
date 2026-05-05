@@ -43,6 +43,7 @@ export const SubmissionRow = z.object({
   round: z.number().int().nonnegative(),
   player_id: z.string().uuid(),
   phrase: z.string(),
+  voice: z.string().default("random"),
 });
 export type SubmissionRow = z.infer<typeof SubmissionRow>;
 

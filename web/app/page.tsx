@@ -50,10 +50,10 @@ function HomeInner() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create game");
-      sessionStorage.setItem(`host_token:${data.code}`, data.host_token);
-      sessionStorage.setItem(`player_token:${data.code}`, data.player_token);
-      sessionStorage.setItem(`player_id:${data.code}`, data.player_id);
-      sessionStorage.setItem(`nickname:${data.code}`, data.nickname);
+      localStorage.setItem(`host_token:${data.code}`, data.host_token);
+      localStorage.setItem(`player_token:${data.code}`, data.player_token);
+      localStorage.setItem(`player_id:${data.code}`, data.player_id);
+      localStorage.setItem(`nickname:${data.code}`, data.nickname);
       router.push(`/host/${data.code}`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error";
@@ -83,9 +83,9 @@ function HomeInner() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to join");
-      sessionStorage.setItem(`player_token:${code}`, data.player_token);
-      sessionStorage.setItem(`player_id:${code}`, data.player_id);
-      sessionStorage.setItem(`nickname:${code}`, data.nickname);
+      localStorage.setItem(`player_token:${code}`, data.player_token);
+      localStorage.setItem(`player_id:${code}`, data.player_id);
+      localStorage.setItem(`nickname:${code}`, data.nickname);
       router.push(`/play/${code}`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error";

@@ -14,9 +14,9 @@ export default function PlayPage(props: { params: Promise<{ code: string }> }) {
   const [nickname, setNickname] = useState<string | null>(null);
 
   useEffect(() => {
-    setPlayerToken(sessionStorage.getItem(`player_token:${code}`));
-    setPlayerId(sessionStorage.getItem(`player_id:${code}`));
-    setNickname(sessionStorage.getItem(`nickname:${code}`));
+    setPlayerToken(localStorage.getItem(`player_token:${code}`));
+    setPlayerId(localStorage.getItem(`player_id:${code}`));
+    setNickname(localStorage.getItem(`nickname:${code}`));
   }, [code]);
 
   if (loading) return <Centered>Loading…</Centered>;

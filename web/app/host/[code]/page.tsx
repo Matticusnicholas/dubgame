@@ -18,12 +18,37 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [streamSafe, setStreamSafe] = useState(false);
+  const dubWindowRef = useRef<Window | null>(null);
 
   useEffect(() => {
-    setHostToken(sessionStorage.getItem(`host_token:${code}`));
-    setPlayerToken(sessionStorage.getItem(`player_token:${code}`));
-    setPlayerId(sessionStorage.getItem(`player_id:${code}`));
+    setHostToken(localStorage.getItem(`host_token:${code}`));
+    setPlayerToken(localStorage.getItem(`player_token:${code}`));
+    setPlayerId(localStorage.getItem(`player_id:${code}`));
+    setStreamSafe(localStorage.getItem("stream_safe_mode") === "1");
   }, [code]);
+
+  function toggleStreamSafe() {
+    setStreamSafe((prev) => {
+      const next = !prev;
+      localStorage.setItem("stream_safe_mode", next ? "1" : "0");
+      return next;
+    });
+  }
+
+  function openDubWindow() {
+    // Reuse existing popup if it's still open, otherwise open fresh.
+    if (dubWindowRef.current && !dubWindowRef.current.closed) {
+      dubWindowRef.current.focus();
+      return;
+    }
+    const w = window.open(
+      `/play/${code}`,
+      "dub-private",
+      "width=420,height=720,resizable=yes,scrollbars=yes,noopener=no",
+    );
+    dubWindowRef.current = w;
+  }
 
   async function start() {
     if (!hostToken) return;
@@ -83,8 +108,21 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
     <main className="min-h-screen p-6 md:p-10">
       <header className="flex items-center justify-between flex-wrap gap-3 mb-6">
         <h1 className="text-2xl font-black tracking-tight">Stupid Dubbing</h1>
-        <div className="text-sm opacity-60">
-          Round {game.current_round} / {game.total_rounds}  ·  state: <span className="font-mono">{game.state}</span>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={toggleStreamSafe}
+            className={`text-xs uppercase tracking-wider rounded-full border px-3 py-1.5 transition ${
+              streamSafe
+                ? "border-white bg-white text-black font-bold"
+                : "border-white/20 hover:bg-white/10"
+            }`}
+            title="Hide your dub & vote on this screen so streamers can show this window safely"
+          >
+            🎭 Stream-safe {streamSafe ? "ON" : "OFF"}
+          </button>
+          <div className="text-sm opacity-60">
+            Round {game.current_round} / {game.total_rounds}
+          </div>
         </div>
       </header>
 
@@ -107,6 +145,8 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           playerToken={playerToken}
           playerId={playerId}
           round={game.current_round}
+          streamSafe={streamSafe}
+          onOpenDubWindow={openDubWindow}
         />
       )}
 
@@ -132,6 +172,8 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           tallyDisabled={actionInFlight}
           playerToken={playerToken}
           playerId={playerId}
+          streamSafe={streamSafe}
+          onOpenDubWindow={openDubWindow}
         />
       )}
 
@@ -232,6 +274,8 @@ function SubmittingHost(props: {
   playerToken: string | null;
   playerId: string | null;
   round: number;
+  streamSafe: boolean;
+  onOpenDubWindow: () => void;
 }) {
   const PLAYS_PER_ROUND = 2;
   const [playToken, setPlayToken] = useState<number | null>(null);
@@ -303,7 +347,7 @@ function SubmittingHost(props: {
         </div>
         <p className="text-2xl font-bold">{props.submissions.length} / {props.playerCount} submitted</p>
 
-        {props.playerToken && props.playerId && (
+        {props.playerToken && props.playerId && !props.streamSafe && (
           <HostSubmitForm
             code={props.code}
             playerToken={props.playerToken}
@@ -314,6 +358,15 @@ function SubmittingHost(props: {
               return s ? { phrase: s.phrase, voice: s.voice ?? "random" } : null;
             })()}
           />
+        )}
+        {props.streamSafe && (
+          <button
+            onClick={props.onOpenDubWindow}
+            className="rounded-xl bg-white/15 hover:bg-white/25 font-bold py-3 text-sm border border-dashed border-white/30"
+            title="Opens a small popup window with your typing/voting controls — drag it off-screen so streamers can show the main window"
+          >
+            🪟 Open private dub window
+          </button>
         )}
 
         <button
@@ -532,6 +585,8 @@ function VotingHost(props: {
   tallyDisabled: boolean;
   playerToken: string | null;
   playerId: string | null;
+  streamSafe: boolean;
+  onOpenDubWindow: () => void;
 }) {
   const myVote = props.playerId ? props.votes.find((v) => v.voter_id === props.playerId) : undefined;
   const [busy, setBusy] = useState(false);
@@ -562,24 +617,38 @@ function VotingHost(props: {
         <h2 className="text-3xl font-black">Vote!</h2>
         <p className="opacity-70">{props.votes.length} / {props.players.length} voted</p>
       </header>
-      <p className="text-sm opacity-60 mb-4">Click your favourite (you can't pick your own).</p>
+      {props.streamSafe ? (
+        <div className="mb-4 flex flex-col gap-2">
+          <p className="text-sm opacity-60">Vote on your phones (or pop out a private window).</p>
+          <button
+            onClick={props.onOpenDubWindow}
+            className="self-start rounded-xl bg-white/15 hover:bg-white/25 font-bold py-2 px-4 text-sm border border-dashed border-white/30"
+          >
+            🪟 Open private dub window
+          </button>
+        </div>
+      ) : (
+        <p className="text-sm opacity-60 mb-4">Click your favourite (you can't pick your own).</p>
+      )}
       <ul className="grid md:grid-cols-2 gap-4">
         {props.submissions.map((s, i) => {
           const isMine = props.playerId === s.player_id;
           const isChosen = myVote?.voted_for_submission_id === s.id;
-          const canVote = props.playerToken && !isMine;
+          // In stream-safe mode, never reveal whether the host already voted (would spoil their pick on stream).
+          const showChosenHighlight = isChosen && !props.streamSafe;
+          const canVote = props.playerToken && !isMine && !props.streamSafe;
           return (
             <li key={s.id}>
               <button
                 onClick={() => canVote && vote(s.id)}
                 disabled={!canVote || busy}
                 className={`w-full text-left rounded-2xl border p-6 transition ${
-                  isChosen ? "border-white bg-white text-black" :
-                  isMine ? "border-white/10 bg-white/5 opacity-50" :
+                  showChosenHighlight ? "border-white bg-white text-black" :
+                  isMine && !props.streamSafe ? "border-white/10 bg-white/5 opacity-50" :
                   "border-white/10 bg-white/5 hover:bg-white/10"
                 }`}
               >
-                <p className="text-xs opacity-50 mb-2">DUB #{i + 1}{isMine ? " (yours)" : ""}</p>
+                <p className="text-xs opacity-50 mb-2">DUB #{i + 1}{isMine && !props.streamSafe ? " (yours)" : ""}</p>
                 <p className="text-2xl font-bold">"{s.phrase}"</p>
               </button>
             </li>

@@ -110,6 +110,7 @@ export function HighlightReel({
           onMuteEnter={onMuteEnter}
           onMuteExit={onMuteExit}
           onEnded={next}
+          subtitles={current.clip.subtitles ?? []}
         />
         {speaking && (
           <div className="absolute bottom-24 left-1/2 -translate-x-1/2 max-w-[80%] bg-black/80 px-6 py-3 rounded-xl text-xl text-center">

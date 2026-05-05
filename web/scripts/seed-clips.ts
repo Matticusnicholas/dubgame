@@ -16,6 +16,12 @@ import { createClient } from "@supabase/supabase-js";
 
 loadDotenv({ path: ".env.local" });
 
+interface SubtitleSeg {
+  start_ms: number;
+  end_ms: number;
+  text: string;
+}
+
 interface ManifestClip {
   id: string;
   file: string;
@@ -25,6 +31,7 @@ interface ManifestClip {
   original_phrase?: string;
   context_before?: string;
   context_after?: string;
+  subtitles?: SubtitleSeg[];
 }
 
 interface Manifest {
@@ -76,6 +83,7 @@ async function main() {
         duration_ms: c.duration_ms,
         mute_start_ms: c.mute_start_ms,
         mute_end_ms: c.mute_end_ms,
+        subtitles: c.subtitles ?? [],
       };
     }
     return {
@@ -84,6 +92,7 @@ async function main() {
       duration_ms: c.duration_ms,
       mute_start_ms: c.mute_start_ms,
       mute_end_ms: c.mute_end_ms,
+      subtitles: c.subtitles ?? [],
     };
   });
 

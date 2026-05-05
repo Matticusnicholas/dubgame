@@ -56,11 +56,19 @@ export const VoteRow = z.object({
 });
 export type VoteRow = z.infer<typeof VoteRow>;
 
+export const SubtitleSegment = z.object({
+  start_ms: z.number().int().nonnegative(),
+  end_ms: z.number().int().positive(),
+  text: z.string(),
+});
+export type SubtitleSegment = z.infer<typeof SubtitleSegment>;
+
 export const ClipRow = z.object({
   id: z.string(),
   file_path: z.string(),
   duration_ms: z.number().int().positive(),
   mute_start_ms: z.number().int().nonnegative(),
   mute_end_ms: z.number().int().positive(),
+  subtitles: z.array(SubtitleSegment).default([]),
 });
 export type ClipRow = z.infer<typeof ClipRow>;

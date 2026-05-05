@@ -230,6 +230,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           clipSrc={clipPublicUrl(clip.file_path)}
           muteStartMs={clip.mute_start_ms}
           muteEndMs={clip.mute_end_ms}
+          subtitles={clip.subtitles ?? []}
           onContinue={advance}
           continueDisabled={actionInFlight}
           playerToken={playerToken}
@@ -247,6 +248,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           clipSrc={clipPublicUrl(clip.file_path)}
           muteStartMs={clip.mute_start_ms}
           muteEndMs={clip.mute_end_ms}
+          subtitles={clip.subtitles ?? []}
           onDone={advance}
           doneDisabled={actionInFlight}
           useKokoro={kokoroEnabled && kokoroState === "ready"}
@@ -410,6 +412,7 @@ function SubmittingHost(props: {
   clipSrc: string;
   muteStartMs: number;
   muteEndMs: number;
+  subtitles: Array<{ start_ms: number; end_ms: number; text: string }>;
   onContinue: () => void;
   continueDisabled: boolean;
   playerToken: string | null;
@@ -460,6 +463,7 @@ function SubmittingHost(props: {
           muteEndMs={props.muteEndMs}
           playToken={playToken}
           onEnded={onEnded}
+          subtitles={props.subtitles}
           muteOverlay={
             <div className="bg-black/80 px-8 py-4 rounded-2xl text-3xl md:text-5xl font-black tracking-wider animate-pulse">
               🔇  DUB THIS PART
@@ -606,6 +610,7 @@ function RevealHost(props: {
   clipSrc: string;
   muteStartMs: number;
   muteEndMs: number;
+  subtitles: Array<{ start_ms: number; end_ms: number; text: string }>;
   onDone: () => void;
   doneDisabled: boolean;
   useKokoro: boolean;
@@ -706,6 +711,7 @@ function RevealHost(props: {
           onMuteEnter={onMuteEnter}
           onMuteExit={onMuteExit}
           playToken={playToken}
+          subtitles={props.subtitles}
         />
         {playToken == null && (
           <button

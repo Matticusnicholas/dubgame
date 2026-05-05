@@ -2,6 +2,12 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
+export interface SubtitleSegment {
+  start_ms: number;
+  end_ms: number;
+  text: string;
+}
+
 export interface ClipPlayerProps {
   src: string;
   muteStartMs: number;
@@ -16,6 +22,10 @@ export interface ClipPlayerProps {
   onEnded?: () => void;
   /** Render-prop overlay rendered on top of the video while inside the mute window. */
   muteOverlay?: React.ReactNode;
+  /** Per-clip subtitle segments (relative timestamps). Rendered as a captioning bar at the bottom. */
+  subtitles?: SubtitleSegment[];
+  /** Hide the captioning bar entirely (e.g. during reveal where the dub overlay takes its place). */
+  hideSubtitles?: boolean;
   className?: string;
 }
 
@@ -30,12 +40,13 @@ export interface ClipPlayerProps {
  * pause at mute_end only if TTS is still speaking).
  */
 export const ClipPlayer = forwardRef<HTMLVideoElement, ClipPlayerProps>(function ClipPlayer(
-  { src, muteStartMs, muteEndMs, onMuteEnter, onMuteExit, playToken, onEnded, muteOverlay, className },
+  { src, muteStartMs, muteEndMs, onMuteEnter, onMuteExit, playToken, onEnded, muteOverlay, subtitles, hideSubtitles, className },
   ref,
 ) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useImperativeHandle(ref, () => videoRef.current!, []);
   const [inMute, setInMute] = useState(false);
+  const [activeSubtitle, setActiveSubtitle] = useState<string>("");
   const wasInMuteRef = useRef(false);
 
   // Restart playback from t=0 whenever playToken transitions to a new non-null value.
@@ -72,6 +83,15 @@ export const ClipPlayer = forwardRef<HTMLVideoElement, ClipPlayerProps>(function
         if (should) onMuteEnter?.();
         else onMuteExit?.();
       }
+      // Sync subtitle to playback time. Suppress entirely during the mute span
+      // so the answer is never accidentally shown at the bottom.
+      if (subtitles && subtitles.length > 0 && !should) {
+        const seg = subtitles.find((s) => ms >= s.start_ms && ms <= s.end_ms);
+        const next = seg?.text ?? "";
+        setActiveSubtitle((prev) => (prev !== next ? next : prev));
+      } else {
+        setActiveSubtitle((prev) => (prev !== "" ? "" : prev));
+      }
       raf = window.requestAnimationFrame(tick);
     };
     raf = window.requestAnimationFrame(tick);
@@ -94,6 +114,14 @@ export const ClipPlayer = forwardRef<HTMLVideoElement, ClipPlayerProps>(function
       {inMute && muteOverlay != null && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           {muteOverlay}
+        </div>
+      )}
+      {!hideSubtitles && activeSubtitle && (
+        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 max-w-[92%]">
+          <p className="px-5 py-2.5 rounded-xl bg-black/85 text-center text-2xl md:text-3xl font-bold leading-snug tracking-tight shadow-2xl"
+             style={{ textShadow: "0 2px 6px rgba(0,0,0,0.9)" }}>
+            {activeSubtitle}
+          </p>
         </div>
       )}
     </div>

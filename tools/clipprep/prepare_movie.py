@@ -37,6 +37,13 @@ class Word:
 
 
 @dataclass
+class SubtitleSegment:
+    start_ms: int
+    end_ms: int
+    text: str
+
+
+@dataclass
 class ClipSpec:
     id: str
     file: str
@@ -46,6 +53,7 @@ class ClipSpec:
     original_phrase: str
     context_before: str
     context_after: str
+    subtitles: list[SubtitleSegment]
 
 
 def slugify(text: str) -> str:
@@ -279,6 +287,60 @@ def extract_clip(source: Path, start: float, duration: float, target: Path, qual
     subprocess.run(cmd, check=True)
 
 
+def group_subtitles(
+    words: list[Word],
+    clip_start: float,
+    clip_end: float,
+    mute_start: float,
+    mute_end: float,
+    max_words_per_segment: int = 9,
+    max_seg_duration_s: float = 3.0,
+) -> list[SubtitleSegment]:
+    """Group the words inside a clip into short readable subtitle segments.
+
+    Splits on sentence-ending punctuation (.!?), or when a segment hits
+    max_words_per_segment, or when it exceeds max_seg_duration_s. Words that
+    fall entirely inside the mute window are excluded so the subtitle layer
+    doesn't reveal the answer to the players.
+    """
+    in_clip = [w for w in words if w.start >= clip_start and w.end <= clip_end]
+    in_clip.sort(key=lambda w: w.start)
+    segments: list[SubtitleSegment] = []
+    buf: list[Word] = []
+
+    def flush():
+        if not buf:
+            return
+        seg_start = buf[0].start
+        seg_end = buf[-1].end
+        # Skip segments that lie entirely inside the mute window.
+        if seg_start >= mute_start and seg_end <= mute_end:
+            buf.clear()
+            return
+        text = " ".join(w.text for w in buf).strip()
+        if text:
+            segments.append(SubtitleSegment(
+                start_ms=int(round((seg_start - clip_start) * 1000)),
+                end_ms=int(round((seg_end - clip_start) * 1000)),
+                text=text,
+            ))
+        buf.clear()
+
+    for w in in_clip:
+        # Don't include words that fall entirely inside the muted span.
+        if w.start >= mute_start and w.end <= mute_end:
+            flush()
+            continue
+        buf.append(w)
+        is_terminal = bool(SENTENCE_END_RE.search(w.text))
+        long_enough = len(buf) >= max_words_per_segment
+        too_long = (buf[-1].end - buf[0].start) >= max_seg_duration_s
+        if is_terminal or long_enough or too_long:
+            flush()
+    flush()
+    return segments
+
+
 def context_phrase(words: list[Word], anchor_time: float, direction: str, max_words: int = 8) -> str:
     """Up to max_words of speech immediately before/after anchor_time."""
     if direction == "before":
@@ -357,6 +419,8 @@ def main(argv: list[str] | None = None) -> int:
         mute_start_ms = max(0, min(mute_start_ms, int(CLIP_DURATION_S * 1000) - 100))
         mute_end_ms = max(mute_start_ms + 100, min(mute_end_ms, int(CLIP_DURATION_S * 1000)))
 
+        subtitles = group_subtitles(words, clip_start, clip_end, mute_abs_start, mute_abs_end)
+
         clips.append(ClipSpec(
             id=clip_id,
             file=clip_file,
@@ -366,6 +430,7 @@ def main(argv: list[str] | None = None) -> int:
             original_phrase=phrase,
             context_before=context_phrase(words, mute_abs_start, "before"),
             context_after=context_phrase(words, mute_abs_end, "after"),
+            subtitles=subtitles,
         ))
         print(f"[clip] {clip_id} ({clip_start:.2f}-{clip_end:.2f})  mute={phrase!r}")
 

@@ -5,7 +5,8 @@ import { track } from "@vercel/analytics";
 import type { RoundWinner } from "@/lib/winners";
 import { ClipPlayer } from "@/components/ClipPlayer";
 import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
-import { isKokoroLoaded, pickKokoroVoiceForVariant, speakWithKokoro } from "@/lib/tts-kokoro";
+import { isKokoroLoaded } from "@/lib/tts-kokoro";
+import { playSubmission } from "@/lib/tts-prefetch";
 import { clipPublicUrl } from "@/lib/supabase-browser";
 
 export function HighlightReel({
@@ -45,8 +46,11 @@ export function HighlightReel({
     setSpeaking(true);
     try {
       if (useKokoro && isKokoroLoaded()) {
-        const k = pickKokoroVoiceForVariant(current.submission.voice ?? "random");
-        await speakWithKokoro(current.submission.phrase, k);
+        await playSubmission({
+          id: current.submission.id,
+          phrase: current.submission.phrase,
+          voice: current.submission.voice,
+        });
       } else {
         const browserVoice = await defaultVoice();
         const variant = resolveVoice(current.submission.voice ?? "random");

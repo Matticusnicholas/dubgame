@@ -80,15 +80,18 @@ export function pickKokoroVoiceForVariant(variantId: string | null | undefined):
   return { voice: cfg.voice, rate: cfg.rate ?? 1.0 };
 }
 
-export async function speakWithKokoro(text: string, opts: { voice: string; rate: number }): Promise<void> {
-  if (!kokoroInstance) {
-    throw new Error("Kokoro not loaded — call loadKokoro() first");
-  }
-  const audio = await kokoroInstance.generate(text, { voice: opts.voice });
-  const blob = audio.toBlob();
+/** Generate Kokoro audio for a phrase. Throws if Kokoro isn't loaded. */
+export async function generateKokoroBlob(text: string, voice: string): Promise<Blob> {
+  if (!kokoroInstance) throw new Error("Kokoro not loaded — call loadKokoro() first");
+  const audio = await kokoroInstance.generate(text, { voice });
+  return audio.toBlob();
+}
+
+/** Play a pre-generated audio blob with a given playback rate. Resolves on end. */
+export async function playKokoroBlob(blob: Blob, rate: number): Promise<void> {
   const url = URL.createObjectURL(blob);
   const audioEl = new Audio(url);
-  audioEl.playbackRate = opts.rate;
+  audioEl.playbackRate = rate;
   try {
     await audioEl.play();
     await new Promise<void>((resolve) => {
@@ -102,4 +105,9 @@ export async function speakWithKokoro(text: string, opts: { voice: string; rate:
   } catch {
     URL.revokeObjectURL(url);
   }
+}
+
+export async function speakWithKokoro(text: string, opts: { voice: string; rate: number }): Promise<void> {
+  const blob = await generateKokoroBlob(text, opts.voice);
+  await playKokoroBlob(blob, opts.rate);
 }

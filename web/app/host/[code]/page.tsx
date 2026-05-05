@@ -7,7 +7,8 @@ import { useGame } from "@/lib/use-game";
 import { clipPublicUrl } from "@/lib/supabase-browser";
 import { ClipPlayer } from "@/components/ClipPlayer";
 import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
-import { loadKokoro, speakWithKokoro, pickKokoroVoiceForVariant, isKokoroLoaded, type KokoroProgress } from "@/lib/tts-kokoro";
+import { loadKokoro, isKokoroLoaded, type KokoroProgress } from "@/lib/tts-kokoro";
+import { prefetchSubmission, playSubmission } from "@/lib/tts-prefetch";
 import { VoicePicker } from "@/components/VoicePicker";
 import { IntroOverlay, shouldShowIntro } from "@/components/IntroOverlay";
 import { HighlightReel } from "@/components/HighlightReel";
@@ -65,6 +66,17 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
   useEffect(() => {
     if (game?.current_clip_id) appendSeenClipIds([game.current_clip_id]);
   }, [game?.current_clip_id]);
+
+  // Speculative Kokoro prefetch — kick off generation as soon as a submission
+  // arrives or is edited, so the audio is already cooked by reveal time.
+  useEffect(() => {
+    if (!kokoroEnabled || kokoroState !== "ready" || !game) return;
+    const round = game.current_round;
+    for (const s of submissions) {
+      if (s.round !== round) continue;
+      prefetchSubmission({ id: s.id, phrase: s.phrase, voice: s.voice });
+    }
+  }, [submissions, kokoroEnabled, kokoroState, game?.current_round, game]);
 
   function toggleStreamSafe() {
     setStreamSafe((prev) => {
@@ -621,8 +633,7 @@ function RevealHost(props: {
     setSpeaking(true);
     try {
       if (props.useKokoro && isKokoroLoaded()) {
-        const k = pickKokoroVoiceForVariant(current.voice ?? "random");
-        await speakWithKokoro(current.phrase, k);
+        await playSubmission({ id: current.id, phrase: current.phrase, voice: current.voice });
       } else {
         const browserVoice = await defaultVoice();
         const variant = resolveVoice(current.voice ?? "random");

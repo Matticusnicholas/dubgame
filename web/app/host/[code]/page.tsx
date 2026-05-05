@@ -412,28 +412,43 @@ function RevealHost(props: {
   const [playToken, setPlayToken] = useState<number | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const playGenerationRef = useRef(0);
+  const speakingRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const current = props.submissions[idx] ?? null;
 
   useEffect(() => {
     return () => cancelSpeech();
   }, []);
 
+  // Fires when video crosses into mute_start. Don't pause — let video keep playing
+  // visually while TTS reads the dub. We'll only pause if TTS is still speaking
+  // when video reaches mute_end (handled in onMuteExit).
   async function onMuteEnter() {
     if (!current) return;
     const generation = playGenerationRef.current;
+    speakingRef.current = true;
     setSpeaking(true);
     const browserVoice = await defaultVoice();
     const variant = resolveVoice(current.voice ?? "random");
     await speak(current.phrase, { voice: browserVoice, rate: variant.rate, pitch: variant.pitch });
-    setSpeaking(false);
-    // If the user moved on (clicked Next, or a new play started), skip resume.
     if (generation !== playGenerationRef.current) return;
-    const video = document.querySelector<HTMLVideoElement>("video");
-    if (video) {
-      video.currentTime = props.muteEndMs / 1000 + 0.01;
+    speakingRef.current = false;
+    setSpeaking(false);
+    // If we paused at mute_end waiting for TTS, resume now.
+    const video = videoRef.current;
+    if (video && video.paused && video.currentTime * 1000 >= props.muteEndMs - 50) {
       video.volume = 1;
       void video.play();
     }
+  }
+
+  // Fires when video naturally reaches mute_end. If the dub TTS is still going,
+  // freeze on this last frame until it finishes; otherwise let the video continue.
+  function onMuteExit() {
+    if (!speakingRef.current) return;
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
   }
 
   function playCurrent() {
@@ -443,6 +458,7 @@ function RevealHost(props: {
 
   function next() {
     cancelSpeech();
+    speakingRef.current = false;
     setSpeaking(false);
     playGenerationRef.current += 1;
     if (idx + 1 < props.submissions.length) {
@@ -468,11 +484,12 @@ function RevealHost(props: {
     <section className="grid md:grid-cols-[2fr_1fr] gap-6">
       <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black relative">
         <ClipPlayer
+          ref={videoRef}
           src={props.clipSrc}
           muteStartMs={props.muteStartMs}
           muteEndMs={props.muteEndMs}
-          pauseOnMute
           onMuteEnter={onMuteEnter}
+          onMuteExit={onMuteExit}
           playToken={playToken}
         />
         {playToken == null && (

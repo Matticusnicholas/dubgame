@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 export interface ClipPlayerProps {
   src: string;
   muteStartMs: number;
   muteEndMs: number;
-  /** When `pauseOnMute` is true, the video pauses at mute_start and waits for `onMuteEnter`. */
-  pauseOnMute?: boolean;
-  /** Fires once when playback enters the mute window. */
+  /** Fires once when playback crosses into the mute window. */
   onMuteEnter?: () => void;
+  /** Fires once when playback crosses out of the mute window. */
+  onMuteExit?: () => void;
   /** When this prop transitions from a falsy/null to a non-null token, the video is played from t=0. */
   playToken?: number | string | null;
   /** Called when the underlying video element fires `ended`. */
@@ -20,32 +20,29 @@ export interface ClipPlayerProps {
 }
 
 /**
- * Plays a clip with playback-time muting. Sets `volume = 0` between mute_start and mute_end.
+ * Plays a clip with playback-time muting. Sets `muted = true` between mute_start and mute_end.
  *
- * Uses a tight rAF/setInterval polling loop (~30fps) instead of the `timeupdate` event,
- * because `timeupdate` only fires every ~250ms which is wider than some of our mute windows
- * and lets audio leak around the edges.
+ * Uses a tight rAF polling loop (~60fps) instead of the `timeupdate` event, which only fires
+ * every ~250ms and is too coarse for short mute windows.
+ *
+ * The component does NOT pause itself — the parent owns pause/play decisions and uses the
+ * forwarded video ref + onMuteEnter/onMuteExit callbacks to orchestrate (e.g., during reveal,
+ * pause at mute_end only if TTS is still speaking).
  */
-export function ClipPlayer({
-  src,
-  muteStartMs,
-  muteEndMs,
-  pauseOnMute,
-  onMuteEnter,
-  playToken,
-  onEnded,
-  muteOverlay,
-  className,
-}: ClipPlayerProps) {
+export const ClipPlayer = forwardRef<HTMLVideoElement, ClipPlayerProps>(function ClipPlayer(
+  { src, muteStartMs, muteEndMs, onMuteEnter, onMuteExit, playToken, onEnded, muteOverlay, className },
+  ref,
+) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const hasPausedThisPlayRef = useRef(false);
+  useImperativeHandle(ref, () => videoRef.current!, []);
   const [inMute, setInMute] = useState(false);
+  const wasInMuteRef = useRef(false);
 
   // Restart playback from t=0 whenever playToken transitions to a new non-null value.
   useEffect(() => {
     const video = videoRef.current;
     if (!video || playToken == null) return;
-    hasPausedThisPlayRef.current = false;
+    wasInMuteRef.current = false;
     setInMute(false);
     try {
       video.currentTime = 0;
@@ -57,7 +54,6 @@ export function ClipPlayer({
     }
   }, [playToken]);
 
-  // Tight polling loop — fires while playing, samples currentTime, applies mute/pause.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -68,14 +64,13 @@ export function ClipPlayer({
       if (!alive) return;
       const ms = video.currentTime * 1000;
       const should = ms >= muteStartMs && ms < muteEndMs;
-      // Use both volume AND muted — some browsers ignore volume changes during playback.
       video.volume = should ? 0 : 1;
       video.muted = should;
-      setInMute((prev) => (prev !== should ? should : prev));
-      if (pauseOnMute && should && !hasPausedThisPlayRef.current && !video.paused) {
-        hasPausedThisPlayRef.current = true;
-        video.pause();
-        onMuteEnter?.();
+      if (should !== wasInMuteRef.current) {
+        wasInMuteRef.current = should;
+        setInMute(should);
+        if (should) onMuteEnter?.();
+        else onMuteExit?.();
       }
       raf = window.requestAnimationFrame(tick);
     };
@@ -84,7 +79,7 @@ export function ClipPlayer({
       alive = false;
       window.cancelAnimationFrame(raf);
     };
-  }, [muteStartMs, muteEndMs, pauseOnMute, onMuteEnter]);
+  }, [muteStartMs, muteEndMs, onMuteEnter, onMuteExit]);
 
   return (
     <div className={(className ?? "w-full h-full") + " relative"}>
@@ -103,11 +98,4 @@ export function ClipPlayer({
       )}
     </div>
   );
-}
-
-/** Imperatively skip to the end of the mute window and resume playback on a ClipPlayer's video. */
-export function jumpPastMute(video: HTMLVideoElement | null, muteEndMs: number) {
-  if (!video) return;
-  video.currentTime = Math.max(video.currentTime, muteEndMs / 1000 + 0.01);
-  void video.play();
-}
+});

@@ -6,6 +6,7 @@ import { useGame } from "@/lib/use-game";
 import { clipPublicUrl } from "@/lib/supabase-browser";
 import { ClipPlayer } from "@/components/ClipPlayer";
 import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
+import { loadKokoro, speakWithKokoro, pickKokoroVoiceForVariant, isKokoroLoaded, type KokoroProgress } from "@/lib/tts-kokoro";
 import { VoicePicker } from "@/components/VoicePicker";
 import { IntroOverlay, shouldShowIntro } from "@/components/IntroOverlay";
 import type { SubmissionRow } from "@/lib/game-state";
@@ -20,6 +21,9 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
   const [actionInFlight, setActionInFlight] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [streamSafe, setStreamSafe] = useState(false);
+  const [kokoroEnabled, setKokoroEnabled] = useState(false);
+  const [kokoroState, setKokoroState] = useState<"off" | "loading" | "ready" | "error">("off");
+  const [kokoroProgress, setKokoroProgress] = useState<{ loaded: number; total: number } | null>(null);
   const dubWindowRef = useRef<Window | null>(null);
 
   useEffect(() => {
@@ -27,7 +31,11 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
     setPlayerToken(localStorage.getItem(`player_token:${code}`));
     setPlayerId(localStorage.getItem(`player_id:${code}`));
     setStreamSafe(localStorage.getItem("stream_safe_mode") === "1");
-  }, [code]);
+    if (localStorage.getItem("kokoro_enabled") === "1") {
+      setKokoroEnabled(true);
+      void enableKokoro(false);
+    }
+  }, [code]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleStreamSafe() {
     setStreamSafe((prev) => {
@@ -35,6 +43,36 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
       localStorage.setItem("stream_safe_mode", next ? "1" : "0");
       return next;
     });
+  }
+
+  async function enableKokoro(askForConfirm: boolean) {
+    if (askForConfirm) {
+      const ok = window.confirm(
+        "Better voices use a higher-quality offline model. First time only, this will download about 80 MB. After that it's cached forever and works offline. Continue?",
+      );
+      if (!ok) return;
+    }
+    setKokoroEnabled(true);
+    setKokoroState("loading");
+    setKokoroProgress(null);
+    localStorage.setItem("kokoro_enabled", "1");
+    try {
+      await loadKokoro((p: KokoroProgress) => {
+        if (p.status === "downloading" && p.loaded != null && p.total != null) {
+          setKokoroProgress({ loaded: p.loaded, total: p.total });
+        }
+      });
+      setKokoroState("ready");
+    } catch (e) {
+      console.error("Kokoro load failed:", e);
+      setKokoroState("error");
+    }
+  }
+
+  function disableKokoro() {
+    localStorage.setItem("kokoro_enabled", "0");
+    setKokoroEnabled(false);
+    setKokoroState("off");
   }
 
   function openDubWindow() {
@@ -109,7 +147,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
     <main className="min-h-screen p-6 md:p-10">
       <header className="flex items-center justify-between flex-wrap gap-3 mb-6">
         <h1 className="text-2xl font-black tracking-tight">Stupid Dubbing</h1>
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={toggleStreamSafe}
             className={`text-xs uppercase tracking-wider rounded-full border px-3 py-1.5 transition ${
@@ -121,6 +159,13 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           >
             🎭 Stream-safe {streamSafe ? "ON" : "OFF"}
           </button>
+          <KokoroToggle
+            enabled={kokoroEnabled}
+            state={kokoroState}
+            progress={kokoroProgress}
+            onEnable={() => enableKokoro(true)}
+            onDisable={disableKokoro}
+          />
           <div className="text-sm opacity-60">
             Round {game.current_round} / {game.total_rounds}
           </div>
@@ -160,6 +205,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           muteEndMs={clip.mute_end_ms}
           onDone={advance}
           doneDisabled={actionInFlight}
+          useKokoro={kokoroEnabled && kokoroState === "ready"}
         />
       )}
 
@@ -198,6 +244,47 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <main className="min-h-screen flex items-center justify-center p-6">{children}</main>;
+}
+
+function KokoroToggle({
+  enabled,
+  state,
+  progress,
+  onEnable,
+  onDisable,
+}: {
+  enabled: boolean;
+  state: "off" | "loading" | "ready" | "error";
+  progress: { loaded: number; total: number } | null;
+  onEnable: () => void;
+  onDisable: () => void;
+}) {
+  const pct = progress && progress.total > 0 ? Math.round((progress.loaded / progress.total) * 100) : null;
+  let label = "🎙️ Better voices: OFF";
+  let title = "Use a higher-quality offline TTS model. First time downloads ~80 MB.";
+  if (enabled && state === "loading") {
+    label = pct != null ? `🎙️ Loading… ${pct}%` : "🎙️ Loading model…";
+    title = "Downloading the voice model — first time only.";
+  } else if (enabled && state === "ready") {
+    label = "🎙️ Better voices: ON";
+    title = "Using offline neural TTS. Click to switch back to browser voices.";
+  } else if (enabled && state === "error") {
+    label = "🎙️ Voice load failed";
+    title = "Click to retry.";
+  }
+  return (
+    <button
+      onClick={enabled && state === "ready" ? onDisable : onEnable}
+      className={`text-xs uppercase tracking-wider rounded-full border px-3 py-1.5 transition ${
+        enabled && state === "ready"
+          ? "border-white bg-white text-black font-bold"
+          : "border-white/20 hover:bg-white/10"
+      }`}
+      title={title}
+    >
+      {label}
+    </button>
+  );
 }
 
 function Lobby({ code, players, onStart, disabled }: { code: string; players: { id: string; nickname: string }[]; onStart: () => void; disabled: boolean }) {
@@ -467,6 +554,7 @@ function RevealHost(props: {
   muteEndMs: number;
   onDone: () => void;
   doneDisabled: boolean;
+  useKokoro: boolean;
 }) {
   const playerById = useMemo(() => new Map(props.players.map((p) => [p.id, p])), [props.players]);
   const [idx, setIdx] = useState(0);
@@ -489,9 +577,22 @@ function RevealHost(props: {
     const generation = playGenerationRef.current;
     speakingRef.current = true;
     setSpeaking(true);
-    const browserVoice = await defaultVoice();
-    const variant = resolveVoice(current.voice ?? "random");
-    await speak(current.phrase, { voice: browserVoice, rate: variant.rate, pitch: variant.pitch });
+    try {
+      if (props.useKokoro && isKokoroLoaded()) {
+        const k = pickKokoroVoiceForVariant(current.voice ?? "random");
+        await speakWithKokoro(current.phrase, k);
+      } else {
+        const browserVoice = await defaultVoice();
+        const variant = resolveVoice(current.voice ?? "random");
+        await speak(current.phrase, { voice: browserVoice, rate: variant.rate, pitch: variant.pitch });
+      }
+    } catch (e) {
+      // Kokoro failed — fall back to browser TTS so the round doesn't stall.
+      console.error("Primary TTS failed, falling back:", e);
+      const browserVoice = await defaultVoice();
+      const variant = resolveVoice(current.voice ?? "random");
+      await speak(current.phrase, { voice: browserVoice, rate: variant.rate, pitch: variant.pitch });
+    }
     if (generation !== playGenerationRef.current) return;
     speakingRef.current = false;
     setSpeaking(false);

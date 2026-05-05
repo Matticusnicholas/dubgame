@@ -48,6 +48,11 @@ export const ClipPlayer = forwardRef<HTMLVideoElement, ClipPlayerProps>(function
   const [inMute, setInMute] = useState(false);
   const [activeSubtitle, setActiveSubtitle] = useState<string>("");
   const wasInMuteRef = useRef(false);
+  // Keep the latest subtitles in a ref so the rAF tick always reads the current
+  // value, not whatever was captured when the effect first ran. Without this,
+  // subtitles fetched after mount never get rendered.
+  const subtitlesRef = useRef<SubtitleSegment[] | undefined>(subtitles);
+  subtitlesRef.current = subtitles;
 
   // Restart playback from t=0 whenever playToken transitions to a new non-null value.
   useEffect(() => {
@@ -85,8 +90,9 @@ export const ClipPlayer = forwardRef<HTMLVideoElement, ClipPlayerProps>(function
       }
       // Sync subtitle to playback time. Suppress entirely during the mute span
       // so the answer is never accidentally shown at the bottom.
-      if (subtitles && subtitles.length > 0 && !should) {
-        const seg = subtitles.find((s) => ms >= s.start_ms && ms <= s.end_ms);
+      const subs = subtitlesRef.current;
+      if (subs && subs.length > 0 && !should) {
+        const seg = subs.find((s) => ms >= s.start_ms && ms <= s.end_ms);
         const next = seg?.text ?? "";
         setActiveSubtitle((prev) => (prev !== next ? next : prev));
       } else {

@@ -119,9 +119,11 @@ export function HighlightReel({
           onEnded={next}
           subtitles={current.clip.subtitles ?? []}
         />
-        {speaking && (
+        {speaking && (current.submission.phrase || current.submission.voice_url) && (
           <div className="absolute bottom-24 left-1/2 -translate-x-1/2 max-w-[80%] bg-black/80 px-6 py-3 rounded-xl text-xl text-center">
-            "{current.submission.phrase}"
+            {current.submission.phrase
+              ? `"${current.submission.phrase}"`
+              : "🎤 voice recording"}
           </div>
         )}
         <div className="absolute top-4 left-4 bg-black/70 rounded-full px-4 py-1.5 text-sm font-mono">
@@ -150,7 +152,11 @@ export function HighlightReel({
       <aside className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-3">
         <p className="uppercase tracking-widest text-xs opacity-60">🎬 Highlight reel</p>
         <p className="text-3xl font-black">{current.player?.nickname ?? "?"}</p>
-        <p className="text-lg italic opacity-80">"{current.submission.phrase}"</p>
+        {current.submission.phrase ? (
+          <p className="text-lg italic opacity-80">"{current.submission.phrase}"</p>
+        ) : (
+          <p className="text-lg italic opacity-60">🎤 voice recording</p>
+        )}
         <p className="text-sm opacity-60">
           Round {current.round} winner · {current.voteCount} vote{current.voteCount === 1 ? "" : "s"}
         </p>

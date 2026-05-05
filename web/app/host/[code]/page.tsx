@@ -585,7 +585,8 @@ function HostSubmitForm(props: {
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
-    if (!phrase.trim() || busy) return;
+    const hasText = phrase.trim().length > 0;
+    if ((!hasText && !recording) || busy) return;
     setBusy(true);
     setErr(null);
     try {
@@ -636,7 +637,7 @@ function HostSubmitForm(props: {
       <VoiceRecorder value={recording} onChange={setRecording} disabled={busy} />
       <button
         type="submit"
-        disabled={busy || phrase.trim().length === 0}
+        disabled={busy || (phrase.trim().length === 0 && !recording)}
         className="rounded-xl bg-white/15 hover:bg-white/25 font-bold py-2 text-sm"
       >
         {submitted ? "Update" : "Submit dub"}
@@ -767,14 +768,18 @@ function RevealHost(props: {
         )}
         {speaking && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 px-6 py-3 rounded-xl text-xl">
-            {resolveVoice(current.voice ?? "random").emoji}  {current.phrase}
+            {current.voice_url ? "🎤" : resolveVoice(current.voice ?? "random").emoji} {current.phrase || (current.voice_url ? "(voice recording)" : "")}
           </div>
         )}
       </div>
       <aside className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-4">
         <p className="uppercase tracking-widest text-xs opacity-60">Now playing</p>
         <p className="text-2xl font-bold">{playerById.get(current.player_id)?.nickname ?? "?"}</p>
-        <p className="text-lg italic opacity-80">"{current.phrase}"</p>
+        {current.phrase ? (
+          <p className="text-lg italic opacity-80">"{current.phrase}"</p>
+        ) : (
+          <p className="text-lg italic opacity-60">🎤 voice recording</p>
+        )}
         <p className="text-sm opacity-50">{idx + 1} / {props.submissions.length}</p>
         <button
           onClick={next}
@@ -860,8 +865,13 @@ function VotingHost(props: {
                   "border-white/10 bg-white/5 hover:bg-white/10"
                 }`}
               >
-                <p className="text-xs opacity-50 mb-2">DUB #{i + 1}{isMine && !props.streamSafe ? " (yours)" : ""}</p>
-                <p className="text-2xl font-bold">"{s.phrase}"</p>
+                <p className="text-xs opacity-50 mb-2">
+                  DUB #{i + 1}{isMine && !props.streamSafe ? " (yours)" : ""}
+                  {s.voice_url ? " · 🎤 voice" : ""}
+                </p>
+                <p className="text-2xl font-bold">
+                  {s.phrase ? `"${s.phrase}"` : <span className="italic opacity-70">🎤 voice recording</span>}
+                </p>
               </button>
             </li>
           );

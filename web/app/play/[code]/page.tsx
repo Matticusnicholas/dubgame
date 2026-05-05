@@ -187,7 +187,7 @@ function Submit({ code, round, playerToken, playerId, submissions }: {
         <VoiceRecorder value={recording} onChange={setRecording} disabled={busy} />
         <button
           type="submit"
-          disabled={busy || phrase.trim().length === 0}
+          disabled={busy || (phrase.trim().length === 0 && !recording)}
           className="rounded-xl bg-white text-black font-bold py-3"
         >
           {submitted ? "Update" : "Submit"}

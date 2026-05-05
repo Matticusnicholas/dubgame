@@ -12,7 +12,9 @@ const MAX_VOICE_BYTES = 200 * 1024; // 200 KB cap (~7s of 24 kbps Opus + slack)
 
 const Body = z.object({
   player_token: z.string(),
-  phrase: z.string().trim().min(1).max(PHRASE_MAX_LEN),
+  // phrase can be empty when a voice recording is supplied — the recording
+  // becomes the entire submission. Required-or-recording logic enforced below.
+  phrase: z.string().trim().max(PHRASE_MAX_LEN).default(""),
   voice: z.string().min(1).max(32).default("random"),
 });
 
@@ -36,7 +38,7 @@ export async function POST(
       voice: String(fd.get("voice") ?? "random") || "random",
     };
     const result = Body.safeParse(raw);
-    if (!result.success) return badRequest(`phrase required (1-${PHRASE_MAX_LEN} chars)`);
+    if (!result.success) return badRequest("invalid submission");
     parsed = result.data;
     const v = fd.get("voice_file");
     if (v instanceof File && v.size > 0) {
@@ -47,8 +49,13 @@ export async function POST(
     try {
       parsed = Body.parse(await req.json());
     } catch {
-      return badRequest(`phrase required (1-${PHRASE_MAX_LEN} chars)`);
+      return badRequest("invalid submission");
     }
+  }
+
+  // Need at least one of phrase or recording.
+  if (!parsed.phrase && !voiceFile) {
+    return badRequest("Type a dub or record a voice (or both)");
   }
 
   const { game, player, error } = await requirePlayer(code, parsed.player_token);

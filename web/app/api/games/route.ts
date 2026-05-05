@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { generateGameCode, generateToken } from "@/lib/code";
+import { generateGameCode, generateToken, isValidCode } from "@/lib/code";
 import { getAdminClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 const Body = z.object({
   total_rounds: z.number().int().min(1).max(20).default(10),
   nickname: z.string().trim().min(1).max(20),
+  custom_code: z.string().trim().toUpperCase().length(5).optional().or(z.literal("")),
 });
 
 export async function POST(req: NextRequest) {
@@ -21,14 +22,22 @@ export async function POST(req: NextRequest) {
   const sb = getAdminClient();
   const hostToken = generateToken();
 
-  // Generate a unique 5-letter code; retry on collision.
+  // If the host requested a specific code, try it once and 409 on collision.
+  // Otherwise generate a random one with retry on collision.
   let game: { id: string; code: string } | null = null;
-  for (let attempt = 0; attempt < 8 && !game; attempt++) {
-    const code = generateGameCode();
+  const wantedCode = body.custom_code && body.custom_code.length === 5 ? body.custom_code : null;
+
+  if (wantedCode) {
+    if (!isValidCode(wantedCode)) {
+      return NextResponse.json(
+        { error: "Custom code must be 5 chars, A–Z and 2–9 only (I, L, O, 0, 1 not allowed)" },
+        { status: 400 },
+      );
+    }
     const { data, error } = await sb
       .from("games")
       .insert({
-        code,
+        code: wantedCode,
         host_token: hostToken,
         state: "lobby",
         current_round: 0,
@@ -37,11 +46,32 @@ export async function POST(req: NextRequest) {
       .select("id, code")
       .single();
     if (error) {
-      // unique violation: try again with a different code
-      if ((error as { code?: string }).code === "23505") continue;
+      if ((error as { code?: string }).code === "23505") {
+        return NextResponse.json({ error: `Code ${wantedCode} is already in use — try another` }, { status: 409 });
+      }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
     game = data;
+  } else {
+    for (let attempt = 0; attempt < 8 && !game; attempt++) {
+      const code = generateGameCode();
+      const { data, error } = await sb
+        .from("games")
+        .insert({
+          code,
+          host_token: hostToken,
+          state: "lobby",
+          current_round: 0,
+          total_rounds: body.total_rounds,
+        })
+        .select("id, code")
+        .single();
+      if (error) {
+        if ((error as { code?: string }).code === "23505") continue;
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      game = data;
+    }
   }
   if (!game) {
     return NextResponse.json({ error: "Could not generate unique code" }, { status: 500 });

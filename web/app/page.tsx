@@ -18,6 +18,7 @@ function HomeInner() {
   const searchParams = useSearchParams();
   const [hosting, setHosting] = useState(false);
   const [hostNickname, setHostNickname] = useState("");
+  const [customCode, setCustomCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [nickname, setNickname] = useState("");
   const [joining, setJoining] = useState(false);
@@ -42,12 +43,20 @@ function HomeInner() {
       setError("Pick a nickname");
       return;
     }
+    const trimmedCustom = customCode.trim().toUpperCase();
+    if (trimmedCustom && !isValidCode(trimmedCustom)) {
+      setError("Custom code must be 5 chars, A–Z and 2–9 only (no I, L, O, 0, 1)");
+      return;
+    }
     setHosting(true);
     try {
       const res = await fetch("/api/games", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ nickname: hostNickname.trim() }),
+        body: JSON.stringify({
+          nickname: hostNickname.trim(),
+          ...(trimmedCustom ? { custom_code: trimmedCustom } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create game");
@@ -117,6 +126,23 @@ function HomeInner() {
                 className="rounded-xl bg-black/40 px-4 py-3 outline-none focus:ring-2 focus:ring-white/40"
                 placeholder="your name"
               />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-wider opacity-60">
+                Custom code <span className="opacity-60 normal-case">(optional)</span>
+              </span>
+              <input
+                value={customCode}
+                onChange={(e) => setCustomCode(e.target.value.toUpperCase().slice(0, 5))}
+                maxLength={5}
+                inputMode="text"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                className="rounded-xl bg-black/40 px-4 py-3 font-mono tracking-widest uppercase outline-none focus:ring-2 focus:ring-white/40"
+                placeholder="leave blank for random"
+              />
+              <span className="text-xs opacity-50">5 chars · A–Z and 2–9 only · no I, L, O, 0, 1</span>
             </label>
             <button
               type="submit"

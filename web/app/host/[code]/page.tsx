@@ -7,6 +7,7 @@ import { clipPublicUrl } from "@/lib/supabase-browser";
 import { ClipPlayer } from "@/components/ClipPlayer";
 import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
 import { VoicePicker } from "@/components/VoicePicker";
+import { IntroOverlay, shouldShowIntro } from "@/components/IntroOverlay";
 import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 
@@ -280,6 +281,12 @@ function SubmittingHost(props: {
   const PLAYS_PER_ROUND = 2;
   const [playToken, setPlayToken] = useState<number | null>(null);
   const [playsDone, setPlaysDone] = useState(0);
+  // Show the intro on the very first round, unless dismissed-permanently.
+  const [showIntro, setShowIntro] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (props.round === 1 && shouldShowIntro()) setShowIntro(true);
+  }, [props.round]);
 
   // Reset playback state on a new round.
   useEffect(() => {
@@ -306,6 +313,7 @@ function SubmittingHost(props: {
   return (
     <section className="grid md:grid-cols-[2fr_1fr] gap-6">
       <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black relative">
+        {showIntro && <IntroOverlay onDone={() => setShowIntro(false)} />}
         <ClipPlayer
           src={props.clipSrc}
           muteStartMs={props.muteStartMs}

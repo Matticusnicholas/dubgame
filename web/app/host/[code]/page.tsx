@@ -9,6 +9,10 @@ import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
 import { loadKokoro, speakWithKokoro, pickKokoroVoiceForVariant, isKokoroLoaded, type KokoroProgress } from "@/lib/tts-kokoro";
 import { VoicePicker } from "@/components/VoicePicker";
 import { IntroOverlay, shouldShowIntro } from "@/components/IntroOverlay";
+import { HighlightReel } from "@/components/HighlightReel";
+import { computeWinnersPerRound, type RoundWinner } from "@/lib/winners";
+import { getBrowserClient } from "@/lib/supabase-browser";
+import type { ClipRow } from "@/lib/game-state";
 import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 
@@ -236,7 +240,16 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
       )}
 
       {game.state === "finished" && (
-        <Finished players={players} onPlayAgain={advance} disabled={actionInFlight} />
+        <FinishedSection
+          gameId={game.id}
+          playedClipIds={game.played_clip_ids ?? []}
+          submissions={submissions}
+          votes={votes}
+          players={players}
+          onPlayAgain={advance}
+          disabled={actionInFlight}
+          useKokoro={kokoroEnabled && kokoroState === "ready"}
+        />
       )}
     </main>
   );
@@ -828,6 +841,71 @@ function Scoreboard(props: {
         </button>
       </div>
     </section>
+  );
+}
+
+function FinishedSection(props: {
+  gameId: string;
+  playedClipIds: string[];
+  submissions: SubmissionRow[];
+  votes: { id: string; game_id: string; round: number; voter_id: string; voted_for_submission_id: string }[];
+  players: { id: string; game_id: string; player_token: string; nickname: string; score: number; joined_at: string }[];
+  onPlayAgain: () => void;
+  disabled: boolean;
+  useKokoro: boolean;
+}) {
+  const [winners, setWinners] = useState<RoundWinner[] | null>(null);
+  const [reelDone, setReelDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ids = props.playedClipIds;
+    if (!ids || ids.length === 0) {
+      setWinners([]);
+      return;
+    }
+    const sb = getBrowserClient();
+    void (async () => {
+      const { data, error } = await sb.from("clips").select("*").in("id", ids);
+      if (error) {
+        setError(error.message);
+        setWinners([]);
+        return;
+      }
+      const clipsById = new Map<string, ClipRow>();
+      for (const c of (data ?? []) as ClipRow[]) clipsById.set(c.id, c);
+      const computed = computeWinnersPerRound(
+        props.submissions,
+        // computeWinnersPerRound expects VoteRow[] with id+game_id; the ones we have already match.
+        props.votes,
+        // PlayerRow[]: we have everything.
+        props.players,
+        clipsById,
+        ids,
+      );
+      setWinners(computed);
+    })();
+  }, [props.gameId, props.playedClipIds, props.submissions, props.votes, props.players]);
+
+  if (winners === null) {
+    return <Centered>Loading highlight reel…</Centered>;
+  }
+
+  if (winners.length > 0 && !reelDone) {
+    return (
+      <HighlightReel
+        winners={winners}
+        useKokoro={props.useKokoro}
+        onDone={() => setReelDone(true)}
+      />
+    );
+  }
+
+  return (
+    <>
+      {error && <p className="text-red-400 mb-4 text-sm">Reel error: {error}</p>}
+      <Finished players={props.players} onPlayAgain={props.onPlayAgain} disabled={props.disabled} />
+    </>
   );
 }
 

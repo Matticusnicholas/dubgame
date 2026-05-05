@@ -106,8 +106,8 @@ export function HighlightReel({
           onEnded={next}
         />
         {speaking && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 px-6 py-3 rounded-xl text-xl">
-            🏆 {current.submission.phrase}
+          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 max-w-[80%] bg-black/80 px-6 py-3 rounded-xl text-xl text-center">
+            "{current.submission.phrase}"
           </div>
         )}
         <div className="absolute top-4 left-4 bg-black/70 rounded-full px-4 py-1.5 text-sm font-mono">
@@ -115,6 +115,22 @@ export function HighlightReel({
         </div>
         <div className="absolute top-4 right-4 bg-black/70 rounded-full px-4 py-1.5 text-sm">
           {idx + 1} / {winners.length}
+        </div>
+        {/* Lower-third nameplate — always visible on the video, broadcast style */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/95 via-black/70 to-transparent pt-8 pb-4 px-6">
+          <div className="flex items-end justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="text-3xl">🏆</div>
+              <div>
+                <p className="text-3xl md:text-4xl font-black tracking-tight leading-none">
+                  {current.player?.nickname ?? "?"}
+                </p>
+                <p className="text-xs uppercase tracking-widest opacity-70 mt-1">
+                  Round {current.round} winner · {current.voteCount} vote{current.voteCount === 1 ? "" : "s"}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
       <aside className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-3">

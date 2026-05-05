@@ -1,0 +1,9 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env.*.local
+next-env.d.ts.bak
+# public/clips/ intentionally NOT ignored — those mp4s ship with the Vercel deploy
+# so the host's browser can fetch them. ~12 MB total, well within Git/GitHub limits.

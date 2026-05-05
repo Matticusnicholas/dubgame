@@ -1,0 +1,623 @@
+"use client";
+
+import { use, useEffect, useMemo, useRef, useState } from "react";
+import { useGame } from "@/lib/use-game";
+import { clipPublicUrl } from "@/lib/supabase-browser";
+import { ClipPlayer } from "@/components/ClipPlayer";
+import { defaultVoice, speak, cancelSpeech } from "@/lib/tts";
+import type { SubmissionRow } from "@/lib/game-state";
+import { PHRASE_MAX_LEN } from "@/lib/game-state";
+
+export default function HostPage(props: { params: Promise<{ code: string }> }) {
+  const { code } = use(props.params);
+  const { game, players, submissions, votes, clip, loading, error } = useGame(code);
+  const [hostToken, setHostToken] = useState<string | null>(null);
+  const [playerToken, setPlayerToken] = useState<string | null>(null);
+  const [playerId, setPlayerId] = useState<string | null>(null);
+  const [actionInFlight, setActionInFlight] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHostToken(sessionStorage.getItem(`host_token:${code}`));
+    setPlayerToken(sessionStorage.getItem(`player_token:${code}`));
+    setPlayerId(sessionStorage.getItem(`player_id:${code}`));
+  }, [code]);
+
+  async function start() {
+    if (!hostToken) return;
+    setActionError(null);
+    setActionInFlight(true);
+    try {
+      const res = await fetch(`/api/games/${code}/start`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ host_token: hostToken }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setActionInFlight(false);
+    }
+  }
+
+  async function advance() {
+    if (!hostToken) return;
+    setActionError(null);
+    setActionInFlight(true);
+    try {
+      const res = await fetch(`/api/games/${code}/advance`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ host_token: hostToken }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+    } catch (e: unknown) {
+      setActionError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setActionInFlight(false);
+    }
+  }
+
+  if (loading) return <Centered>Loading…</Centered>;
+  if (error) return <Centered>{error}</Centered>;
+  if (!game) return <Centered>Game not found.</Centered>;
+
+  if (!hostToken) {
+    return (
+      <Centered>
+        <div className="text-center max-w-md">
+          <p className="text-2xl font-bold mb-2">No host token in this browser.</p>
+          <p className="opacity-70">Open the game on the device that created it, or create a new game.</p>
+          <a href="/" className="inline-block mt-6 underline">Back to home</a>
+        </div>
+      </Centered>
+    );
+  }
+
+  return (
+    <main className="min-h-screen p-6 md:p-10">
+      <header className="flex items-center justify-between flex-wrap gap-3 mb-6">
+        <h1 className="text-2xl font-black tracking-tight">Stupid Dubbing</h1>
+        <div className="text-sm opacity-60">
+          Round {game.current_round} / {game.total_rounds}  ·  state: <span className="font-mono">{game.state}</span>
+        </div>
+      </header>
+
+      {actionError && <div className="mb-4 rounded-xl bg-red-900/40 border border-red-600/40 px-4 py-2 text-red-200">{actionError}</div>}
+
+      {game.state === "lobby" && (
+        <Lobby code={code} players={players} onStart={start} disabled={actionInFlight || players.length < 1} />
+      )}
+
+      {game.state === "submitting" && clip && (
+        <SubmittingHost
+          code={code}
+          submissions={submissions.filter((s) => s.round === game.current_round)}
+          playerCount={players.length}
+          clipSrc={clipPublicUrl(clip.file_path)}
+          muteStartMs={clip.mute_start_ms}
+          muteEndMs={clip.mute_end_ms}
+          onContinue={advance}
+          continueDisabled={actionInFlight}
+          playerToken={playerToken}
+          playerId={playerId}
+          round={game.current_round}
+        />
+      )}
+
+      {game.state === "reveal" && clip && (
+        <RevealHost
+          submissions={submissions.filter((s) => s.round === game.current_round)}
+          players={players}
+          clipSrc={clipPublicUrl(clip.file_path)}
+          muteStartMs={clip.mute_start_ms}
+          muteEndMs={clip.mute_end_ms}
+          onDone={advance}
+          doneDisabled={actionInFlight}
+        />
+      )}
+
+      {game.state === "voting" && (
+        <VotingHost
+          code={code}
+          submissions={submissions.filter((s) => s.round === game.current_round)}
+          players={players}
+          votes={votes.filter((v) => v.round === game.current_round)}
+          onTally={advance}
+          tallyDisabled={actionInFlight}
+          playerToken={playerToken}
+          playerId={playerId}
+        />
+      )}
+
+      {game.state === "scoreboard" && (
+        <Scoreboard
+          players={players}
+          isFinal={game.current_round >= game.total_rounds}
+          submissions={submissions.filter((s) => s.round === game.current_round)}
+          votes={votes.filter((v) => v.round === game.current_round)}
+          onContinue={advance}
+          continueDisabled={actionInFlight}
+        />
+      )}
+
+      {game.state === "finished" && (
+        <Finished players={players} onPlayAgain={advance} disabled={actionInFlight} />
+      )}
+    </main>
+  );
+}
+
+function Centered({ children }: { children: React.ReactNode }) {
+  return <main className="min-h-screen flex items-center justify-center p-6">{children}</main>;
+}
+
+function Lobby({ code, players, onStart, disabled }: { code: string; players: { id: string; nickname: string }[]; onStart: () => void; disabled: boolean }) {
+  return (
+    <section className="grid md:grid-cols-2 gap-8 items-start">
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-8 text-center">
+        <p className="uppercase tracking-widest text-sm opacity-60 mb-3">Join code</p>
+        <p className="text-7xl md:text-9xl font-black tracking-[0.15em] font-mono">{code}</p>
+        <p className="mt-4 opacity-70">Open the site on your phone and enter this code.</p>
+      </div>
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+        <h2 className="text-2xl font-bold mb-4">Players ({players.length})</h2>
+        {players.length === 0 ? (
+          <p className="opacity-60">Waiting for someone to join…</p>
+        ) : (
+          <ul className="space-y-2">
+            {players.map((p) => (
+              <li key={p.id} className="rounded-xl bg-black/30 px-4 py-2">{p.nickname}</li>
+            ))}
+          </ul>
+        )}
+        <button
+          onClick={onStart}
+          disabled={disabled}
+          className="mt-6 w-full rounded-xl bg-white text-black font-bold py-3 hover:bg-white/90"
+        >
+          Start game
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function SubmittingHost(props: {
+  code: string;
+  submissions: SubmissionRow[];
+  playerCount: number;
+  clipSrc: string;
+  muteStartMs: number;
+  muteEndMs: number;
+  onContinue: () => void;
+  continueDisabled: boolean;
+  playerToken: string | null;
+  playerId: string | null;
+  round: number;
+}) {
+  const PLAYS_PER_ROUND = 2;
+  const [playToken, setPlayToken] = useState<number | null>(null);
+  const [playsDone, setPlaysDone] = useState(0);
+
+  // Reset playback state on a new round.
+  useEffect(() => {
+    setPlayToken(null);
+    setPlaysDone(0);
+  }, [props.clipSrc, props.round]);
+
+  function onEnded() {
+    const next = playsDone + 1;
+    setPlaysDone(next);
+    if (next < PLAYS_PER_ROUND) {
+      // Tiny gap before the second play so the cut isn't jarring.
+      setTimeout(() => setPlayToken(Date.now()), 600);
+    }
+  }
+
+  function startOrReplay() {
+    setPlaysDone(0);
+    setPlayToken(Date.now());
+  }
+
+  const playing = playToken != null && playsDone < PLAYS_PER_ROUND;
+  const showStart = playToken == null;
+  return (
+    <section className="grid md:grid-cols-[2fr_1fr] gap-6">
+      <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black relative">
+        <ClipPlayer
+          src={props.clipSrc}
+          muteStartMs={props.muteStartMs}
+          muteEndMs={props.muteEndMs}
+          playToken={playToken}
+          onEnded={onEnded}
+          muteOverlay={
+            <div className="bg-black/80 px-8 py-4 rounded-2xl text-3xl md:text-5xl font-black tracking-wider animate-pulse">
+              🔇  DUB THIS PART
+            </div>
+          }
+        />
+        {showStart && (
+          <button
+            onClick={startOrReplay}
+            className="absolute inset-0 flex items-center justify-center bg-black/40 text-2xl font-bold"
+          >
+            ▶  Play clip ({PLAYS_PER_ROUND}×)
+          </button>
+        )}
+        {!showStart && !playing && (
+          <button
+            onClick={startOrReplay}
+            className="absolute bottom-4 right-4 rounded-xl bg-white/20 hover:bg-white/30 px-4 py-2 text-sm font-bold"
+          >
+            ↻ Replay
+          </button>
+        )}
+        {playing && (
+          <div className="absolute top-4 right-4 rounded-full bg-black/70 px-3 py-1 text-xs font-mono">
+            play {Math.min(playsDone + 1, PLAYS_PER_ROUND)} / {PLAYS_PER_ROUND}
+          </div>
+        )}
+      </div>
+      <aside className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-4">
+        <div>
+          <p className="uppercase tracking-widest text-xs opacity-60">Code</p>
+          <p className="text-4xl font-mono font-black tracking-widest">{props.code}</p>
+        </div>
+        <p className="text-2xl font-bold">{props.submissions.length} / {props.playerCount} submitted</p>
+
+        {props.playerToken && props.playerId && (
+          <HostSubmitForm
+            code={props.code}
+            playerToken={props.playerToken}
+            playerId={props.playerId}
+            round={props.round}
+            existing={props.submissions.find((s) => s.player_id === props.playerId)?.phrase ?? ""}
+          />
+        )}
+
+        <button
+          onClick={props.onContinue}
+          disabled={props.continueDisabled || props.submissions.length === 0}
+          className="mt-auto rounded-xl bg-white text-black font-bold py-3 hover:bg-white/90"
+        >
+          Reveal dubs →
+        </button>
+      </aside>
+    </section>
+  );
+}
+
+function HostSubmitForm(props: {
+  code: string;
+  playerToken: string;
+  playerId: string;
+  round: number;
+  existing: string;
+}) {
+  const [phrase, setPhrase] = useState(props.existing);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+
+  // Sync if the existing submission changes (e.g., new round).
+  useEffect(() => {
+    setPhrase(props.existing);
+  }, [props.existing, props.round]);
+
+  async function send(e: React.FormEvent) {
+    e.preventDefault();
+    if (!phrase.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/games/${props.code}/submit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ player_token: props.playerToken, phrase: phrase.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+      setSavedAt(Date.now());
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const submitted = !!props.existing;
+  return (
+    <form onSubmit={send} className="flex flex-col gap-2 border-t border-white/10 pt-4">
+      <span className="text-xs uppercase tracking-wider opacity-60">Your dub</span>
+      <textarea
+        value={phrase}
+        onChange={(e) => setPhrase(e.target.value.slice(0, PHRASE_MAX_LEN))}
+        maxLength={PHRASE_MAX_LEN}
+        rows={2}
+        placeholder="They're coming to get you, Barbara"
+        className="rounded-xl bg-black/40 px-3 py-2 outline-none focus:ring-2 focus:ring-white/40 resize-none"
+      />
+      <div className="flex justify-between items-center text-xs opacity-60">
+        <span>{phrase.length} / {PHRASE_MAX_LEN}</span>
+        {submitted && <span>✓ submitted (you can edit)</span>}
+        {savedAt && <span>saved</span>}
+      </div>
+      <button
+        type="submit"
+        disabled={busy || phrase.trim().length === 0}
+        className="rounded-xl bg-white/15 hover:bg-white/25 font-bold py-2 text-sm"
+      >
+        {submitted ? "Update" : "Submit dub"}
+      </button>
+      {err && <p className="text-red-400 text-xs">{err}</p>}
+    </form>
+  );
+}
+
+function RevealHost(props: {
+  submissions: SubmissionRow[];
+  players: { id: string; nickname: string }[];
+  clipSrc: string;
+  muteStartMs: number;
+  muteEndMs: number;
+  onDone: () => void;
+  doneDisabled: boolean;
+}) {
+  const playerById = useMemo(() => new Map(props.players.map((p) => [p.id, p])), [props.players]);
+  const [idx, setIdx] = useState(0);
+  const [playToken, setPlayToken] = useState<number | null>(null);
+  const [speaking, setSpeaking] = useState(false);
+  const playGenerationRef = useRef(0);
+  const current = props.submissions[idx] ?? null;
+
+  useEffect(() => {
+    return () => cancelSpeech();
+  }, []);
+
+  async function onMuteEnter() {
+    if (!current) return;
+    const generation = playGenerationRef.current;
+    setSpeaking(true);
+    const voice = await defaultVoice();
+    await speak(current.phrase, { voice, rate: 1.0 });
+    setSpeaking(false);
+    // If the user moved on (clicked Next, or a new play started), skip resume.
+    if (generation !== playGenerationRef.current) return;
+    const video = document.querySelector<HTMLVideoElement>("video");
+    if (video) {
+      video.currentTime = props.muteEndMs / 1000 + 0.01;
+      video.volume = 1;
+      void video.play();
+    }
+  }
+
+  function playCurrent() {
+    playGenerationRef.current += 1;
+    setPlayToken(Date.now());
+  }
+
+  function next() {
+    cancelSpeech();
+    setSpeaking(false);
+    playGenerationRef.current += 1;
+    if (idx + 1 < props.submissions.length) {
+      setIdx((i) => i + 1);
+      setPlayToken(null);
+    } else {
+      props.onDone();
+    }
+  }
+
+  if (!current) {
+    return (
+      <Centered>
+        <div className="text-center">
+          <p className="text-2xl font-bold mb-4">No submissions to reveal.</p>
+          <button onClick={props.onDone} className="rounded-xl bg-white text-black font-bold py-3 px-6">Continue</button>
+        </div>
+      </Centered>
+    );
+  }
+
+  return (
+    <section className="grid md:grid-cols-[2fr_1fr] gap-6">
+      <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black relative">
+        <ClipPlayer
+          src={props.clipSrc}
+          muteStartMs={props.muteStartMs}
+          muteEndMs={props.muteEndMs}
+          pauseOnMute
+          onMuteEnter={onMuteEnter}
+          playToken={playToken}
+        />
+        {playToken == null && (
+          <button
+            onClick={playCurrent}
+            className="absolute inset-0 flex items-center justify-center bg-black/40 text-2xl font-bold"
+          >
+            ▶  Play dub {idx + 1} of {props.submissions.length}
+          </button>
+        )}
+        {speaking && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/80 px-6 py-3 rounded-xl text-xl">
+            🗣️  {current.phrase}
+          </div>
+        )}
+      </div>
+      <aside className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-4">
+        <p className="uppercase tracking-widest text-xs opacity-60">Now playing</p>
+        <p className="text-2xl font-bold">{playerById.get(current.player_id)?.nickname ?? "?"}</p>
+        <p className="text-lg italic opacity-80">"{current.phrase}"</p>
+        <p className="text-sm opacity-50">{idx + 1} / {props.submissions.length}</p>
+        <button
+          onClick={next}
+          disabled={props.doneDisabled}
+          className="mt-auto rounded-xl bg-white text-black font-bold py-3 hover:bg-white/90"
+        >
+          {idx + 1 < props.submissions.length ? "Next dub →" : "Open voting →"}
+        </button>
+      </aside>
+    </section>
+  );
+}
+
+function VotingHost(props: {
+  code: string;
+  submissions: SubmissionRow[];
+  players: { id: string; nickname: string }[];
+  votes: { voter_id: string; voted_for_submission_id: string }[];
+  onTally: () => void;
+  tallyDisabled: boolean;
+  playerToken: string | null;
+  playerId: string | null;
+}) {
+  const myVote = props.playerId ? props.votes.find((v) => v.voter_id === props.playerId) : undefined;
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function vote(submissionId: string) {
+    if (!props.playerToken || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/games/${props.code}/vote`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ player_token: props.playerToken, submission_id: submissionId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section>
+      <header className="flex justify-between items-baseline mb-4">
+        <h2 className="text-3xl font-black">Vote!</h2>
+        <p className="opacity-70">{props.votes.length} / {props.players.length} voted</p>
+      </header>
+      <p className="text-sm opacity-60 mb-4">Click your favourite (you can't pick your own).</p>
+      <ul className="grid md:grid-cols-2 gap-4">
+        {props.submissions.map((s, i) => {
+          const isMine = props.playerId === s.player_id;
+          const isChosen = myVote?.voted_for_submission_id === s.id;
+          const canVote = props.playerToken && !isMine;
+          return (
+            <li key={s.id}>
+              <button
+                onClick={() => canVote && vote(s.id)}
+                disabled={!canVote || busy}
+                className={`w-full text-left rounded-2xl border p-6 transition ${
+                  isChosen ? "border-white bg-white text-black" :
+                  isMine ? "border-white/10 bg-white/5 opacity-50" :
+                  "border-white/10 bg-white/5 hover:bg-white/10"
+                }`}
+              >
+                <p className="text-xs opacity-50 mb-2">DUB #{i + 1}{isMine ? " (yours)" : ""}</p>
+                <p className="text-2xl font-bold">"{s.phrase}"</p>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {err && <p className="text-red-400 mt-4 text-sm">{err}</p>}
+      <div className="mt-8 flex justify-end">
+        <button
+          onClick={props.onTally}
+          disabled={props.tallyDisabled || props.votes.length === 0}
+          className="rounded-xl bg-white text-black font-bold py-3 px-6 hover:bg-white/90"
+        >
+          Tally votes →
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function Scoreboard(props: {
+  players: { id: string; nickname: string; score: number }[];
+  isFinal: boolean;
+  submissions: SubmissionRow[];
+  votes: { voted_for_submission_id: string }[];
+  onContinue: () => void;
+  continueDisabled: boolean;
+}) {
+  const ranked = [...props.players].sort((a, b) => b.score - a.score);
+  const tally = new Map<string, number>();
+  for (const v of props.votes) tally.set(v.voted_for_submission_id, (tally.get(v.voted_for_submission_id) ?? 0) + 1);
+  const winnerSub = props.submissions.length > 0
+    ? props.submissions.reduce((best, s) => ((tally.get(s.id) ?? 0) > (tally.get(best.id) ?? 0) ? s : best), props.submissions[0])
+    : null;
+  const winnerVotes = winnerSub ? (tally.get(winnerSub.id) ?? 0) : 0;
+  const winnerName = winnerSub ? props.players.find((p) => p.id === winnerSub.player_id)?.nickname : null;
+
+  return (
+    <section className="grid md:grid-cols-2 gap-8 items-start">
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+        <p className="uppercase tracking-widest text-xs opacity-60">Round winner</p>
+        {winnerSub && winnerVotes > 0 ? (
+          <>
+            <p className="text-4xl font-black mt-2">{winnerName}</p>
+            <p className="text-xl italic opacity-80 mt-2">"{winnerSub.phrase}"</p>
+            <p className="opacity-60 mt-2">{winnerVotes} vote{winnerVotes === 1 ? "" : "s"}</p>
+          </>
+        ) : (
+          <p className="text-2xl mt-2">No votes this round.</p>
+        )}
+      </div>
+      <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
+        <h2 className="text-2xl font-bold mb-4">Scoreboard</h2>
+        <ol className="space-y-2">
+          {ranked.map((p, i) => (
+            <li key={p.id} className="flex justify-between items-center rounded-xl bg-black/30 px-4 py-2">
+              <span><span className="opacity-50 mr-3">{i + 1}.</span>{p.nickname}</span>
+              <span className="font-bold">{p.score}</span>
+            </li>
+          ))}
+        </ol>
+        <button
+          onClick={props.onContinue}
+          disabled={props.continueDisabled}
+          className="mt-6 w-full rounded-xl bg-white text-black font-bold py-3 hover:bg-white/90"
+        >
+          {props.isFinal ? "Show final scores →" : "Next round →"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function Finished(props: { players: { id: string; nickname: string; score: number }[]; onPlayAgain: () => void; disabled: boolean }) {
+  const ranked = [...props.players].sort((a, b) => b.score - a.score);
+  const winner = ranked[0];
+  return (
+    <section className="max-w-2xl mx-auto text-center mt-10">
+      <p className="uppercase tracking-widest text-sm opacity-60">Final results</p>
+      <p className="text-6xl md:text-8xl font-black mt-4">{winner?.nickname ?? "—"}</p>
+      <p className="text-xl opacity-70 mt-2">{winner?.score ?? 0} points</p>
+      <ol className="mt-10 space-y-2 text-left">
+        {ranked.map((p, i) => (
+          <li key={p.id} className="flex justify-between items-center rounded-xl bg-white/5 border border-white/10 px-4 py-3">
+            <span><span className="opacity-50 mr-3">{i + 1}.</span>{p.nickname}</span>
+            <span className="font-bold">{p.score}</span>
+          </li>
+        ))}
+      </ol>
+      <button
+        onClick={props.onPlayAgain}
+        disabled={props.disabled}
+        className="mt-8 rounded-xl bg-white text-black font-bold py-3 px-6 hover:bg-white/90"
+      >
+        Play again
+      </button>
+    </section>
+  );
+}

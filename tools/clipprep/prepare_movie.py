@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import re
 import shutil
@@ -19,9 +20,13 @@ from typing import Iterable
 
 CLIP_DURATION_S = 15.0
 MIN_SPEECH_COVERAGE_S = 8.0
-MIN_MIDDLE_RUN_S = 5.5  # need a long continuous speech run we can mute
+MIN_MIDDLE_RUN_S = 5.5  # need a long continuous speech run we can mute (multi-speaker fallback)
 MUTE_MIN_S = 5.0
 MUTE_MAX_S = 7.0
+# When diarization is available and the entire mute span is one speaker, we
+# can relax the minimum because uniform-speaker mutes feel more natural.
+SAME_SPEAKER_MUTE_MIN_S = 2.0
+SAME_SPEAKER_MIN_RUN_S = 2.5
 # How far in from each edge of the clip the mute window can sit. Loosened from
 # the strict middle-third because a 5-7s mute won't fit in a 5s middle third.
 MUTE_REGION_PAD_S = 3.0
@@ -34,6 +39,7 @@ class Word:
     start: float
     end: float
     text: str
+    speaker: str | None = None  # populated by diarization when available
 
 
 @dataclass
@@ -92,6 +98,70 @@ def download_input(input_arg: str, cache_dir: Path) -> Path:
             raise RuntimeError("yt-dlp finished but no mp4 found in cache")
         return candidates[0]
     return target
+
+
+@dataclass
+class SpeakerTurn:
+    start: float
+    end: float
+    speaker: str
+
+
+def diarize(media_path: Path, _unused_token: str, cache_path: Path) -> list[SpeakerTurn]:
+    """Run speaker diarization via simple-diarizer (SpeechBrain ECAPA + spectral clustering).
+    Caches per-movie result to JSON. No HF auth required — models come from
+    SpeechBrain's public Hugging Face mirror.
+    """
+    if cache_path.exists():
+        print(f"[diarize] using cached diarization {cache_path}")
+        raw = json.loads(cache_path.read_text(encoding="utf-8"))
+        return [SpeakerTurn(**t) for t in raw]
+
+    # simple-diarizer needs a wav file; mp4 won't work directly. Extract a
+    # mono 16kHz wav next to the cache for it to chew on.
+    audio_wav = cache_path.with_suffix(".wav")
+    if not audio_wav.exists():
+        print(f"[diarize] extracting audio to {audio_wav.name}...")
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(media_path), "-ac", "1", "-ar", "16000",
+             "-vn", "-loglevel", "error", str(audio_wav)],
+            check=True,
+        )
+
+    print("[diarize] loading simple-diarizer (one-time SpeechBrain ECAPA download)...")
+    from simple_diarizer.diarizer import Diarizer  # lazy import
+    diar = Diarizer(embed_model="ecapa", cluster_method="sc")
+
+    print(f"[diarize] running on {audio_wav.name} (this is the slow step, ~5-15 min on CPU)...")
+    segments = diar.diarize(str(audio_wav), num_speakers=None)
+
+    turns: list[SpeakerTurn] = []
+    for seg in segments:
+        start = float(seg.get("start", 0.0))
+        end = float(seg.get("end", start))
+        label = seg.get("label", 0)
+        turns.append(SpeakerTurn(start=start, end=end, speaker=f"SPEAKER_{label}"))
+    turns.sort(key=lambda t: t.start)
+    print(f"[diarize] found {len(turns)} speaker turns from {len({t.speaker for t in turns})} distinct speakers")
+    cache_path.write_text(
+        json.dumps([asdict(t) for t in turns], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return turns
+
+
+def assign_speakers(words: list[Word], turns: list[SpeakerTurn]) -> None:
+    """Annotate each Word in-place with the speaker active at its midpoint."""
+    if not turns:
+        return
+    # Two-pointer walk for O(n+m).
+    i = 0
+    for w in words:
+        midpoint = (w.start + w.end) / 2.0
+        while i < len(turns) and turns[i].end < midpoint:
+            i += 1
+        if i < len(turns) and turns[i].start <= midpoint <= turns[i].end:
+            w.speaker = turns[i].speaker
 
 
 def transcribe(media_path: Path, model_name: str, cache_path: Path) -> list[Word]:
@@ -210,17 +280,28 @@ def _ends_sentence(text: str) -> bool:
     return bool(SENTENCE_END_RE.search(text or ""))
 
 
-def pick_mute_window(words: list[Word], clip_start: float, clip_end: float, rng: random.Random) -> tuple[float, float, str] | None:
-    """Pick a contiguous run of words in the muteable region whose span is MUTE_MIN_S..MUTE_MAX_S.
+def pick_mute_window(
+    words: list[Word],
+    clip_start: float,
+    clip_end: float,
+    rng: random.Random,
+    speaker_aware: bool = False,
+) -> tuple[float, float, str] | None:
+    """Pick a contiguous run of words in the muteable region for the mute span.
 
-    Both ends must land on a sentence boundary: the run starts at the first word of a
-    new sentence (i.e., the previous word in the source ended with .?!) and ends with a
-    word whose text ends in sentence punctuation. Returns None if no such run fits.
+    Always: both ends land on a sentence boundary (previous word ended with .?!,
+    last word ends with .?!).
+
+    If `speaker_aware` is True: ALSO require all words in the span have the same
+    speaker_id. Allows shorter mute spans (SAME_SPEAKER_MUTE_MIN_S) since a
+    single-speaker mute feels natural at any duration.
+
+    Returns None if no such run fits.
     """
     mid_start = clip_start + MUTE_REGION_PAD_S
     mid_end = clip_end - MUTE_REGION_PAD_S
+    min_dur = SAME_SPEAKER_MUTE_MIN_S if speaker_aware else MUTE_MIN_S
 
-    # Index words globally so we can peek at the word right before the muteable region.
     valid_starts: list[int] = []
     for i, w in enumerate(words):
         if w.start < mid_start or w.end > mid_end:
@@ -231,14 +312,20 @@ def pick_mute_window(words: list[Word], clip_start: float, clip_end: float, rng:
 
     valid_runs: list[tuple[int, int]] = []
     for i in valid_starts:
+        run_speaker = words[i].speaker if speaker_aware else None
+        # If we're speaker-aware but the starting word has no speaker label, skip.
+        if speaker_aware and run_speaker is None:
+            continue
         for j in range(i, len(words)):
             wj = words[j]
             if wj.end > mid_end:
                 break
+            if speaker_aware and wj.speaker != run_speaker:
+                break  # run can't extend past a speaker change
             span = wj.end - words[i].start
             if span > MUTE_MAX_S:
                 break
-            if span < MUTE_MIN_S:
+            if span < min_dur:
                 continue
             if not _ends_sentence(wj.text):
                 continue
@@ -370,6 +457,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--quality", choices=list(QUALITY_PRESETS.keys()), default="high",
                         help="output encoding preset: low (~400KB/clip, 360p mono 64k aac), "
                              "medium (~700KB/clip, 480p stereo 96k aac), high (default, ~1MB/clip, source-res)")
+    parser.add_argument("--diarize", action="store_true",
+                        help="run speaker diarization (pyannote) and require all-same-speaker "
+                             "mute spans. Allows shorter spans (2-7s instead of 5-7s) for "
+                             "more natural-feeling cuts. Requires HF_TOKEN env var.")
     args = parser.parse_args(argv)
 
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
@@ -391,6 +482,13 @@ def main(argv: list[str] | None = None) -> int:
         print("ERROR: transcription returned no words", file=sys.stderr)
         return 1
 
+    if args.diarize:
+        diarization_cache = cache_dir / f"diarization_{slugify(media_path.stem)}.json"
+        turns = diarize(media_path, "", diarization_cache)
+        assign_speakers(words, turns)
+        labelled = sum(1 for w in words if w.speaker is not None)
+        print(f"[diarize] labelled {labelled}/{len(words)} words with speaker IDs")
+
     rng = random.Random(args.seed)
     windows = find_clip_windows(words, duration, args.max_clips)
     print(f"[clips] selected {len(windows)} non-overlapping dialogue windows")
@@ -400,7 +498,7 @@ def main(argv: list[str] | None = None) -> int:
     skipped_no_sentence = 0
     next_idx = 1
     for clip_start, clip_end in windows:
-        result = pick_mute_window(words, clip_start, clip_end, rng)
+        result = pick_mute_window(words, clip_start, clip_end, rng, speaker_aware=args.diarize)
         if result is None:
             skipped_no_sentence += 1
             continue

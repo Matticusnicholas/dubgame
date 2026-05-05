@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { track } from "@vercel/analytics";
 import type { RoundWinner } from "@/lib/winners";
 import { ClipPlayer } from "@/components/ClipPlayer";
 import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
@@ -84,6 +85,7 @@ export function HighlightReel({
 
   function skipAll() {
     cancelSpeech();
+    track("highlight_reel_skipped", { at: idx, total: winners.length });
     onDone();
   }
 

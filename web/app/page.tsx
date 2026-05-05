@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { track } from "@vercel/analytics";
 import { isValidCode } from "@/lib/code";
 
 export default function Home() {
@@ -83,6 +84,7 @@ function HomeInner() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to join");
+      track("game_joined");
       localStorage.setItem(`player_token:${code}`, data.player_token);
       localStorage.setItem(`player_id:${code}`, data.player_id);
       localStorage.setItem(`nickname:${code}`, data.nickname);

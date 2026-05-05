@@ -2,6 +2,7 @@
 
 import { use, useEffect, useMemo, useState } from "react";
 import { useGame } from "@/lib/use-game";
+import { track } from "@vercel/analytics";
 import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 import { VoicePicker } from "@/components/VoicePicker";
@@ -136,6 +137,7 @@ function Submit({ code, round, playerToken, playerId, submissions }: {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
+      track("dub_submitted", { voice, role: "player" });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Failed");
     } finally {

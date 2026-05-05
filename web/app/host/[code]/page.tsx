@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
+import { track } from "@vercel/analytics";
 import { QRCodeSVG } from "qrcode.react";
 import { useGame } from "@/lib/use-game";
 import { clipPublicUrl } from "@/lib/supabase-browser";
@@ -41,6 +42,22 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
     }
   }, [code]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fire `game_finished` exactly once per game when state transitions to finished.
+  const finishedTrackedRef = useRef(false);
+  useEffect(() => {
+    if (game?.state === "finished" && !finishedTrackedRef.current) {
+      finishedTrackedRef.current = true;
+      track("game_finished", {
+        rounds: game.current_round,
+        players: players.length,
+        top_score: Math.max(0, ...players.map((p) => p.score)),
+      });
+    } else if (game?.state === "lobby") {
+      // Re-arm if the same game was reset (Play Again).
+      finishedTrackedRef.current = false;
+    }
+  }, [game?.state, game?.current_round, players]);
+
   function toggleStreamSafe() {
     setStreamSafe((prev) => {
       const next = !prev;
@@ -67,9 +84,11 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
         }
       });
       setKokoroState("ready");
+      track("kokoro_enabled");
     } catch (e) {
       console.error("Kokoro load failed:", e);
       setKokoroState("error");
+      track("kokoro_failed");
     }
   }
 
@@ -105,6 +124,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
+      track("game_started", { rounds: game?.total_rounds ?? 0, players: players.length });
     } catch (e: unknown) {
       setActionError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -521,6 +541,7 @@ function HostSubmitForm(props: {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
+      track("dub_submitted", { voice, role: "host" });
       setSavedAt(Date.now());
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Failed");

@@ -1,23 +1,44 @@
 import { getAdminClient } from "./supabase-server";
 import { ClipRow } from "./game-state";
 
-/** Pick a random clip not already used in this game. Returns null if no clips at all. */
-export async function pickNextClip(_gameId: string, alreadyPlayed: string[]): Promise<ClipRow | null> {
-  const sb = getAdminClient();
-  const query = sb.from("clips").select("*");
-  const { data, error } = alreadyPlayed.length > 0
-    ? await query.not("id", "in", `(${alreadyPlayed.map((id) => `"${id}"`).join(",")})`)
-    : await query;
-  if (error) throw error;
+const inList = (ids: string[]) => `(${ids.map((id) => `"${id}"`).join(",")})`;
 
-  let candidates = (data ?? []) as ClipRow[];
-  if (candidates.length === 0) {
-    // All clips used; fall back to the full pool so the game keeps going.
-    const { data: all, error: e2 } = await sb.from("clips").select("*");
-    if (e2) throw e2;
-    candidates = (all ?? []) as ClipRow[];
+/**
+ * Pick a random clip with two levels of exclusion, falling back as needed:
+ *   1. Try clips not in (alreadyPlayed ∪ extraExclude) — best case, fully fresh
+ *   2. Fall back to clips not in alreadyPlayed (the host's seen list is exhausted)
+ *   3. Fall back to the full pool (this game itself exhausted the pool — rollover)
+ */
+export async function pickNextClip(
+  _gameId: string,
+  alreadyPlayed: string[],
+  extraExclude: string[] = [],
+): Promise<ClipRow | null> {
+  const sb = getAdminClient();
+  const fullExclude = Array.from(new Set([...alreadyPlayed, ...extraExclude]));
+
+  const tryExclude = async (excluded: string[]): Promise<ClipRow[]> => {
+    const q = sb.from("clips").select("*");
+    const { data, error } = excluded.length > 0
+      ? await q.not("id", "in", inList(excluded))
+      : await q;
+    if (error) throw error;
+    return (data ?? []) as ClipRow[];
+  };
+
+  // Tier 1: fully fresh
+  let candidates = await tryExclude(fullExclude);
+
+  // Tier 2: relax to in-game-only dedup
+  if (candidates.length === 0 && alreadyPlayed.length > 0) {
+    candidates = await tryExclude(alreadyPlayed);
   }
+
+  // Tier 3: full pool (rollover)
+  if (candidates.length === 0) {
+    candidates = await tryExclude([]);
+  }
+
   if (candidates.length === 0) return null;
-  const pick = candidates[Math.floor(Math.random() * candidates.length)];
-  return pick;
+  return candidates[Math.floor(Math.random() * candidates.length)] ?? null;
 }

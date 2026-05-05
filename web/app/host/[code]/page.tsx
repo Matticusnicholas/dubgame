@@ -14,6 +14,7 @@ import { HighlightReel } from "@/components/HighlightReel";
 import { computeWinnersPerRound, type RoundWinner } from "@/lib/winners";
 import { getBrowserClient } from "@/lib/supabase-browser";
 import type { ClipRow } from "@/lib/game-state";
+import { getSeenClipIds, appendSeenClipIds } from "@/lib/seen-clips";
 import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 
@@ -57,6 +58,13 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
       finishedTrackedRef.current = false;
     }
   }, [game?.state, game?.current_round, players]);
+
+  // Append each new round's clip to the host's localStorage seen list. Done
+  // per-round (not per-game) so even abandoned games still contribute to the
+  // freshness rotation on this browser.
+  useEffect(() => {
+    if (game?.current_clip_id) appendSeenClipIds([game.current_clip_id]);
+  }, [game?.current_clip_id]);
 
   function toggleStreamSafe() {
     setStreamSafe((prev) => {
@@ -120,7 +128,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
       const res = await fetch(`/api/games/${code}/start`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ host_token: hostToken }),
+        body: JSON.stringify({ host_token: hostToken, exclude_clip_ids: getSeenClipIds() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
@@ -140,7 +148,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
       const res = await fetch(`/api/games/${code}/advance`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ host_token: hostToken }),
+        body: JSON.stringify({ host_token: hostToken, exclude_clip_ids: getSeenClipIds() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");

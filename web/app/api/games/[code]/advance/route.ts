@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 
 const Body = z.object({
   host_token: z.string(),
+  exclude_clip_ids: z.array(z.string()).max(500).optional(),
 });
 
 export async function POST(
@@ -101,7 +102,7 @@ export async function POST(
         if (e) return NextResponse.json({ error: e.message }, { status: 500 });
         return NextResponse.json({ ok: true, state: "finished" });
       }
-      const clip = await pickNextClip(game.id, game.played_clip_ids ?? []);
+      const clip = await pickNextClip(game.id, game.played_clip_ids ?? [], body.exclude_clip_ids ?? []);
       if (!clip) return conflict("No clips available");
       const { error: e } = await sb
         .from("games")

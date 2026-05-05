@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 
 const Body = z.object({
   host_token: z.string(),
+  exclude_clip_ids: z.array(z.string()).max(500).optional(),
 });
 
 export async function POST(
@@ -36,7 +37,7 @@ export async function POST(
     .eq("game_id", game.id);
   if (!playerCount || playerCount < 1) return conflict("Need at least one player");
 
-  const clip = await pickNextClip(game.id, game.played_clip_ids ?? []);
+  const clip = await pickNextClip(game.id, game.played_clip_ids ?? [], body.exclude_clip_ids ?? []);
   if (!clip) return conflict("No clips available — seed the clips table first");
 
   const { error: updateErr } = await sb

@@ -10,6 +10,7 @@ import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
 import { loadKokoro, isKokoroLoaded, type KokoroProgress } from "@/lib/tts-kokoro";
 import { prefetchSubmission, playSubmission } from "@/lib/tts-prefetch";
 import { VoicePicker } from "@/components/VoicePicker";
+import { VoiceRecorder, type RecordedVoice } from "@/components/VoiceRecorder";
 import { IntroOverlay, shouldShowIntro } from "@/components/IntroOverlay";
 import { HighlightReel } from "@/components/HighlightReel";
 import { computeWinnersPerRound, type RoundWinner } from "@/lib/winners";
@@ -301,6 +302,15 @@ function Centered({ children }: { children: React.ReactNode }) {
   return <main className="min-h-screen flex items-center justify-center p-6">{children}</main>;
 }
 
+async function playRecordedVoice(url: string): Promise<void> {
+  const audioEl = new Audio(url);
+  await audioEl.play();
+  await new Promise<void>((resolve) => {
+    audioEl.onended = () => resolve();
+    audioEl.onerror = () => resolve();
+  });
+}
+
 function KokoroToggle({
   enabled,
   state,
@@ -542,6 +552,7 @@ function HostSubmitForm(props: {
 }) {
   const [phrase, setPhrase] = useState(props.existing?.phrase ?? "");
   const [voice, setVoice] = useState<string>(props.existing?.voice ?? "random");
+  const [recording, setRecording] = useState<RecordedVoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -550,6 +561,7 @@ function HostSubmitForm(props: {
   useEffect(() => {
     setPhrase(props.existing?.phrase ?? "");
     setVoice(props.existing?.voice ?? "random");
+    setRecording(null);
   }, [props.existing?.phrase, props.existing?.voice, props.round]);
 
   async function send(e: React.FormEvent) {
@@ -558,14 +570,24 @@ function HostSubmitForm(props: {
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/games/${props.code}/submit`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ player_token: props.playerToken, phrase: phrase.trim(), voice }),
-      });
+      let res: Response;
+      if (recording) {
+        const fd = new FormData();
+        fd.append("player_token", props.playerToken);
+        fd.append("phrase", phrase.trim());
+        fd.append("voice", voice);
+        fd.append("voice_file", recording.blob, "voice." + (recording.mimeType.includes("mp4") ? "mp4" : "webm"));
+        res = await fetch(`/api/games/${props.code}/submit`, { method: "POST", body: fd });
+      } else {
+        res = await fetch(`/api/games/${props.code}/submit`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ player_token: props.playerToken, phrase: phrase.trim(), voice }),
+        });
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
-      track("dub_submitted", { voice, role: "host" });
+      track("dub_submitted", { voice, role: "host", with_recording: recording ? 1 : 0 });
       setSavedAt(Date.now());
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Failed");
@@ -591,7 +613,8 @@ function HostSubmitForm(props: {
         {submitted && <span>✓ submitted (you can edit)</span>}
         {savedAt && <span>saved</span>}
       </div>
-      <VoicePicker value={voice} onChange={setVoice} disabled={busy} />
+      <VoicePicker value={voice} onChange={setVoice} disabled={busy || !!recording} />
+      <VoiceRecorder value={recording} onChange={setRecording} disabled={busy} />
       <button
         type="submit"
         disabled={busy || phrase.trim().length === 0}
@@ -637,7 +660,9 @@ function RevealHost(props: {
     speakingRef.current = true;
     setSpeaking(true);
     try {
-      if (props.useKokoro && isKokoroLoaded()) {
+      if (current.voice_url) {
+        await playRecordedVoice(current.voice_url);
+      } else if (props.useKokoro && isKokoroLoaded()) {
         await playSubmission({ id: current.id, phrase: current.phrase, voice: current.voice });
       } else {
         const browserVoice = await defaultVoice();

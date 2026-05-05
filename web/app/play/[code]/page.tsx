@@ -6,6 +6,7 @@ import { track } from "@vercel/analytics";
 import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 import { VoicePicker } from "@/components/VoicePicker";
+import { VoiceRecorder, type RecordedVoice } from "@/components/VoiceRecorder";
 
 export default function PlayPage(props: { params: Promise<{ code: string }> }) {
   const { code } = use(props.params);
@@ -112,6 +113,7 @@ function Submit({ code, round, playerToken, playerId, submissions }: {
   const mine = submissions.find((s) => s.round === round && s.player_id === playerId);
   const [phrase, setPhrase] = useState(mine?.phrase ?? "");
   const [voice, setVoice] = useState<string>(mine?.voice ?? "random");
+  const [recording, setRecording] = useState<RecordedVoice | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const submitted = !!mine;
@@ -122,7 +124,8 @@ function Submit({ code, round, playerToken, playerId, submissions }: {
       setPhrase(mine.phrase);
       setVoice(mine.voice ?? "random");
     }
-  }, [mine?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    setRecording(null);
+  }, [mine?.id, round]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -130,14 +133,24 @@ function Submit({ code, round, playerToken, playerId, submissions }: {
     setBusy(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/games/${code}/submit`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ player_token: playerToken, phrase: phrase.trim(), voice }),
-      });
+      let res: Response;
+      if (recording) {
+        const fd = new FormData();
+        fd.append("player_token", playerToken);
+        fd.append("phrase", phrase.trim());
+        fd.append("voice", voice);
+        fd.append("voice_file", recording.blob, "voice." + (recording.mimeType.includes("mp4") ? "mp4" : "webm"));
+        res = await fetch(`/api/games/${code}/submit`, { method: "POST", body: fd });
+      } else {
+        res = await fetch(`/api/games/${code}/submit`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ player_token: playerToken, phrase: phrase.trim(), voice }),
+        });
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
-      track("dub_submitted", { voice, role: "player" });
+      track("dub_submitted", { voice, role: "player", with_recording: recording ? 1 : 0 });
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -166,8 +179,12 @@ function Submit({ code, round, playerToken, playerId, submissions }: {
         </div>
         <div className="flex flex-col gap-2">
           <span className="text-xs uppercase tracking-wider opacity-60">Voice</span>
-          <VoicePicker value={voice} onChange={setVoice} disabled={busy} />
+          <VoicePicker value={voice} onChange={setVoice} disabled={busy || !!recording} />
+          {recording && (
+            <p className="text-xs opacity-50 italic">Voice picker is ignored when you record yourself.</p>
+          )}
         </div>
+        <VoiceRecorder value={recording} onChange={setRecording} disabled={busy} />
         <button
           type="submit"
           disabled={busy || phrase.trim().length === 0}

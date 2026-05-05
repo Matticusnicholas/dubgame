@@ -44,6 +44,7 @@ export const SubmissionRow = z.object({
   player_id: z.string().uuid(),
   phrase: z.string(),
   voice: z.string().default("random"),
+  voice_url: z.string().nullable().optional(),
 });
 export type SubmissionRow = z.infer<typeof SubmissionRow>;
 

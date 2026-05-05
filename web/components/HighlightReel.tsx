@@ -45,7 +45,14 @@ export function HighlightReel({
     speakingRef.current = true;
     setSpeaking(true);
     try {
-      if (useKokoro && isKokoroLoaded()) {
+      if (current.submission.voice_url) {
+        const a = new Audio(current.submission.voice_url);
+        await a.play();
+        await new Promise<void>((resolve) => {
+          a.onended = () => resolve();
+          a.onerror = () => resolve();
+        });
+      } else if (useKokoro && isKokoroLoaded()) {
         await playSubmission({
           id: current.submission.id,
           phrase: current.submission.phrase,

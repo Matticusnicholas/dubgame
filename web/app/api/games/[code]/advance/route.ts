@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { SupabaseClient } from "@supabase/supabase-js";
 import { isValidCode } from "@/lib/code";
 import { getAdminClient } from "@/lib/supabase-server";
 import { badRequest, conflict, requireHost } from "@/lib/api-helpers";
 import { pickNextClip } from "@/lib/round";
 
 export const runtime = "nodejs";
+
+const VOICE_BUCKET = "voices";
+
+async function deleteGameVoiceFiles(sb: SupabaseClient, gameId: string): Promise<void> {
+  // List everything under the game's folder, then bulk delete.
+  const { data, error } = await sb.storage.from(VOICE_BUCKET).list(gameId);
+  if (error || !data || data.length === 0) return;
+  const paths = data.map((f) => `${gameId}/${f.name}`);
+  await sb.storage.from(VOICE_BUCKET).remove(paths);
+}
 
 const Body = z.object({
   host_token: z.string(),
@@ -123,7 +134,8 @@ export async function POST(
     }
 
     case "finished": {
-      // finished → lobby (play again, reset round count + scores)
+      // finished → lobby (play again, reset round count + scores). Also wipe
+      // any uploaded voice recordings in Storage so we don't accumulate.
       const { error: e1 } = await sb
         .from("games")
         .update({ state: "lobby", current_round: 0, current_clip_id: null, played_clip_ids: [] })
@@ -132,6 +144,7 @@ export async function POST(
       await sb.from("submissions").delete().eq("game_id", game.id);
       await sb.from("votes").delete().eq("game_id", game.id);
       await sb.from("players").update({ score: 0 }).eq("game_id", game.id);
+      await deleteGameVoiceFiles(sb, game.id);
       return NextResponse.json({ ok: true, state: "lobby" });
     }
 

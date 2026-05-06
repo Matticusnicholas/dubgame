@@ -1,8 +1,14 @@
 # YouTube Shorts pack — setup
 
-The weekly cron at `.github/workflows/yt-shorts-weekly.yml` ingests fresh YouTube
-Shorts into the `clips` table without downloading any video. Embedding is
-sanctioned by YouTube — creators get the views, no copyright concern.
+The weekly cron ingests fresh YouTube Shorts into the `clips` table without
+downloading any video. Embedding is sanctioned by YouTube — creators get the
+views, no copyright concern.
+
+> ⚠️ **Cron host gotcha:** YouTube heavily rate-limits datacenter IPs (especially
+> GitHub Actions runners). Captions return "Sign in to confirm you're not a bot."
+> The recommended setup is **local cron via Windows Task Scheduler** (residential
+> IP works fine). The GitHub Actions workflow stays as a fallback for when YouTube
+> ever loosens up. See "Local cron" below.
 
 ## One-time setup
 
@@ -74,3 +80,41 @@ Edit the `cron` line in the workflow, or trigger manually with a different
 
 Total: $0/month. YouTube Data API quota is generous, GitHub Actions is free for
 public repos / 2000 free min/month for private. Each run finishes in ~2 min.
+
+---
+
+## Local cron (recommended — residential IP works)
+
+GitHub Actions runners get blocked by YouTube; running the same script from your
+laptop works because YouTube doesn't block home/ISP IPs.
+
+### One-time setup
+
+1. Copy `tools/clipprep/.yt.env.example` to `tools/clipprep/.yt.env` and fill in
+   your YouTube API key + Supabase URL + service-role key. (`.yt.env` is gitignored.)
+2. Open **Task Scheduler** → **Create Basic Task**.
+3. Trigger: **Weekly**, pick a time you'll usually be at the laptop (e.g. Sundays 10 PM).
+4. Action: **Start a program**.
+5. Program/script: `powershell.exe`
+6. Arguments:
+   ```
+   -NoProfile -ExecutionPolicy Bypass -File "C:\Users\Test\Documents\apps\mattsdubbingstupidprogram\tools\clipprep\run_yt_pipeline.ps1"
+   ```
+7. Finish. Then right-click the task → **Run** to test it manually.
+
+The script auto-installs the latest yt-dlp on each run (so YouTube extractor patches
+roll in automatically) and writes new clips into Supabase. No git commits, no
+Vercel deploy needed — clips appear in the database the moment the script finishes.
+
+### Manually run anytime
+
+```powershell
+cd C:\Users\Test\Documents\apps\mattsdubbingstupidprogram\tools\clipprep
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run_yt_pipeline.ps1
+```
+
+Or directly:
+```powershell
+$env:YT_API_KEY = "..."; $env:SUPABASE_URL = "..."; $env:SUPABASE_SERVICE_KEY = "..."
+python tools\clipprep\yt_shorts_pipeline.py
+```

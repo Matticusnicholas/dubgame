@@ -13,6 +13,7 @@ import { VoicePicker } from "@/components/VoicePicker";
 import { VoiceRecorder, type RecordedVoice } from "@/components/VoiceRecorder";
 import { IntroOverlay, shouldShowIntro } from "@/components/IntroOverlay";
 import { HighlightReel } from "@/components/HighlightReel";
+import { ChatPanel } from "@/components/ChatPanel";
 import { computeWinnersPerRound, type RoundWinner } from "@/lib/winners";
 import { getBrowserClient } from "@/lib/supabase-browser";
 import { getSeenClipIds, appendSeenClipIds } from "@/lib/seen-clips";
@@ -308,6 +309,10 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           useKokoro={kokoroEnabled && kokoroState === "ready"}
         />
       )}
+
+      <div className="mt-8 max-w-2xl mx-auto w-full">
+        <ChatPanel gameId={game.id} code={code} hostToken={hostToken} playerToken={playerToken} />
+      </div>
     </main>
   );
 }

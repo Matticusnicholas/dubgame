@@ -7,6 +7,7 @@ import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 import { VoicePicker } from "@/components/VoicePicker";
 import { VoiceRecorder, type RecordedVoice } from "@/components/VoiceRecorder";
+import { ChatPanel } from "@/components/ChatPanel";
 
 export default function PlayPage(props: { params: Promise<{ code: string }> }) {
   const { code } = use(props.params);
@@ -91,6 +92,8 @@ export default function PlayPage(props: { params: Promise<{ code: string }> }) {
           <PlayerScoreboard players={players} myId={playerId} compact />
         </Card>
       )}
+
+      <ChatPanel gameId={game.id} code={code} playerToken={playerToken} />
     </main>
   );
 }

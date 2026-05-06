@@ -290,6 +290,10 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
 
       {game.state === "reveal" && clip && (
         <RevealHost
+          code={code}
+          hostToken={hostToken}
+          currentRevealSubmissionId={game.current_reveal_submission_id ?? null}
+          playToken={game.play_token ?? null}
           submissions={submissions.filter((s) => s.round === game.current_round)}
           players={players}
           clip={clip}
@@ -693,6 +697,10 @@ function HostSubmitForm(props: {
 }
 
 function RevealHost(props: {
+  code: string;
+  hostToken: string | null;
+  currentRevealSubmissionId: string | null;
+  playToken: string | null;
   submissions: SubmissionRow[];
   players: { id: string; nickname: string }[];
   clip: ClipRow;
@@ -702,8 +710,11 @@ function RevealHost(props: {
   useKokoro: boolean;
 }) {
   const playerById = useMemo(() => new Map(props.players.map((p) => [p.id, p])), [props.players]);
-  const [idx, setIdx] = useState(0);
-  const [playToken, setPlayToken] = useState<number | null>(null);
+  const idx = useMemo(() => {
+    if (!props.currentRevealSubmissionId) return 0;
+    const found = props.submissions.findIndex((s) => s.id === props.currentRevealSubmissionId);
+    return found >= 0 ? found : 0;
+  }, [props.currentRevealSubmissionId, props.submissions]);
   const [speaking, setSpeaking] = useState(false);
   const playGenerationRef = useRef(0);
   const speakingRef = useRef(false);
@@ -758,19 +769,35 @@ function RevealHost(props: {
     playerRef.current?.pause();
   }
 
-  function playCurrent() {
-    playGenerationRef.current += 1;
-    setPlayToken(Date.now());
+  async function callRevealNext(submissionId: string | null | undefined) {
+    if (!props.hostToken) return;
+    try {
+      await fetch(`/api/games/${props.code}/reveal-next`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          host_token: props.hostToken,
+          ...(submissionId !== undefined ? { submission_id: submissionId } : {}),
+        }),
+      });
+    } catch {
+      /* harmless on transient failure */
+    }
   }
 
-  function next() {
+  function playCurrent() {
+    playGenerationRef.current += 1;
+    void callRevealNext(undefined); // no submission_id change, just refresh play_token
+  }
+
+  async function next() {
     cancelSpeech();
     speakingRef.current = false;
     setSpeaking(false);
     playGenerationRef.current += 1;
     if (idx + 1 < props.submissions.length) {
-      setIdx((i) => i + 1);
-      setPlayToken(null);
+      const nextSub = props.submissions[idx + 1];
+      await callRevealNext(nextSub.id);
     } else {
       props.onDone();
     }
@@ -796,9 +823,9 @@ function RevealHost(props: {
           src={props.clipSrc}
           onMuteEnter={onMuteEnter}
           onMuteExit={onMuteExit}
-          playToken={playToken}
+          playToken={props.playToken}
         />
-        {playToken == null && (
+        {props.playToken == null && (
           <button
             onClick={playCurrent}
             className="absolute inset-0 flex items-center justify-center bg-black/40 text-2xl font-bold"

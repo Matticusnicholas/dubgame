@@ -28,6 +28,7 @@ export const GameRow = z.object({
   is_public: z.boolean().default(false),
   lobby_title: z.string().nullable().optional(),
   play_token: z.string().nullable().optional(),
+  current_reveal_submission_id: z.string().nullable().optional(),
 });
 export type GameRow = z.infer<typeof GameRow>;
 

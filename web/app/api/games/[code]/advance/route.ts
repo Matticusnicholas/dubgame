@@ -44,15 +44,33 @@ export async function POST(
 
   switch (game.state) {
     case "submitting": {
-      // submitting → reveal
-      const { error: e } = await sb.from("games").update({ state: "reveal" }).eq("id", game.id);
+      // submitting → reveal. Pre-populate the first submission to reveal so
+      // online clients have something to render the moment they enter the state.
+      const { data: firstSub } = await sb
+        .from("submissions")
+        .select("id")
+        .eq("game_id", game.id)
+        .eq("round", game.current_round)
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      const { error: e } = await sb
+        .from("games")
+        .update({
+          state: "reveal",
+          current_reveal_submission_id: firstSub?.id ?? null,
+        })
+        .eq("id", game.id);
       if (e) return NextResponse.json({ error: e.message }, { status: 500 });
       return NextResponse.json({ ok: true, state: "reveal" });
     }
 
     case "reveal": {
-      // reveal → voting
-      const { error: e } = await sb.from("games").update({ state: "voting" }).eq("id", game.id);
+      // reveal → voting; clear the reveal pointer so it doesn't leak across rounds.
+      const { error: e } = await sb
+        .from("games")
+        .update({ state: "voting", current_reveal_submission_id: null })
+        .eq("id", game.id);
       if (e) return NextResponse.json({ error: e.message }, { status: 500 });
       return NextResponse.json({ ok: true, state: "voting" });
     }

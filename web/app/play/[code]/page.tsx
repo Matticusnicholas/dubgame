@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { track } from "@vercel/analytics";
 import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
@@ -9,7 +9,9 @@ import { VoiceRecorder, type RecordedVoice } from "@/components/VoiceRecorder";
 import { ChatPanel } from "@/components/ChatPanel";
 import { useGame } from "@/lib/use-game";
 import { clipPublicUrl } from "@/lib/supabase-browser";
-import { UniversalClipPlayer } from "@/components/UniversalClipPlayer";
+import { UniversalClipPlayer, type UniversalClipPlayerHandle } from "@/components/UniversalClipPlayer";
+import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
+import type { ClipRow } from "@/lib/game-state";
 
 export default function PlayPage(props: { params: Promise<{ code: string }> }) {
   const { code } = use(props.params);
@@ -90,6 +92,16 @@ export default function PlayPage(props: { params: Promise<{ code: string }> }) {
         </Card>
       )}
 
+      {game.state === "reveal" && clip && (
+        <RevealOnPhone
+          clip={clip}
+          submissions={submissions.filter((s) => s.round === game.current_round)}
+          players={players}
+          currentRevealSubmissionId={game.current_reveal_submission_id ?? null}
+          playToken={game.play_token ?? null}
+        />
+      )}
+
       {game.state === "voting" && (
         <Vote
           code={code}
@@ -124,6 +136,122 @@ function Centered({ children }: { children: React.ReactNode }) {
 
 function Card({ children }: { children: React.ReactNode }) {
   return <section className="rounded-2xl border border-white/10 bg-white/5 p-6">{children}</section>;
+}
+
+const PLAYER_TTS_KEY = "player_tts_muted";
+
+function RevealOnPhone({
+  clip,
+  submissions,
+  players,
+  currentRevealSubmissionId,
+  playToken,
+}: {
+  clip: ClipRow;
+  submissions: SubmissionRow[];
+  players: Array<{ id: string; nickname: string }>;
+  currentRevealSubmissionId: string | null;
+  playToken: string | null;
+}) {
+  const current = submissions.find((s) => s.id === currentRevealSubmissionId) ?? null;
+  const author = current ? players.find((p) => p.id === current.player_id) : null;
+  const [muted, setMuted] = useState<boolean>(false);
+  const [speaking, setSpeaking] = useState(false);
+  const speakingRef = useRef(false);
+  const wasPausedRef = useRef(false);
+  const playerRef = useRef<UniversalClipPlayerHandle>(null);
+  const playGenRef = useRef(0);
+
+  // Read mute preference from storage so users in a couch setting can
+  // suppress duplicate TTS while their host's TV does the talking.
+  useEffect(() => {
+    setMuted(localStorage.getItem(PLAYER_TTS_KEY) === "1");
+  }, []);
+
+  function toggleMute() {
+    setMuted((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(PLAYER_TTS_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
+  // Whenever we move to a new submission OR get a new play_token, we'll let
+  // ClipPlayer's playToken-driven restart logic handle video. The TTS hook
+  // below fires when the video crosses into the muted span.
+  useEffect(() => () => cancelSpeech(), []);
+
+  async function onMuteEnter() {
+    if (!current || muted) return;
+    const gen = ++playGenRef.current;
+    speakingRef.current = true;
+    setSpeaking(true);
+    try {
+      if (current.voice_url) {
+        const a = new Audio(current.voice_url);
+        await a.play();
+        await new Promise<void>((resolve) => {
+          a.onended = () => resolve();
+          a.onerror = () => resolve();
+        });
+      } else {
+        const browserVoice = await defaultVoice();
+        const variant = resolveVoice(current.voice ?? "random");
+        await speak(current.phrase || "", { voice: browserVoice, rate: variant.rate, pitch: variant.pitch });
+      }
+    } catch {
+      /* swallow — keep round flowing */
+    }
+    if (gen !== playGenRef.current) return;
+    speakingRef.current = false;
+    setSpeaking(false);
+    if (wasPausedRef.current) {
+      wasPausedRef.current = false;
+      playerRef.current?.play();
+    }
+  }
+
+  function onMuteExit() {
+    if (!speakingRef.current) return;
+    wasPausedRef.current = true;
+    playerRef.current?.pause();
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs uppercase tracking-widest opacity-60">Reveal</p>
+        <button
+          onClick={toggleMute}
+          className="text-xs rounded-full px-2.5 py-1 bg-white/10 hover:bg-white/20"
+          title="Mute the dub TTS on this device (useful when host has speakers)"
+        >
+          {muted ? "🔇 muted" : "🔊 audible"}
+        </button>
+      </div>
+      <div className="aspect-video w-full rounded-xl overflow-hidden bg-black relative">
+        <UniversalClipPlayer
+          ref={playerRef}
+          clip={clip}
+          src={clipPublicUrl(clip.file_path)}
+          playToken={playToken}
+          onMuteEnter={onMuteEnter}
+          onMuteExit={onMuteExit}
+        />
+        {speaking && current && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 max-w-[90%] bg-black/85 px-3 py-1.5 rounded-lg text-sm text-center">
+            {current.voice_url ? "🎤" : "🗣️"} {current.phrase || "(voice recording)"}
+          </div>
+        )}
+      </div>
+      {current && (
+        <p className="text-sm mt-3 opacity-80">
+          <span className="font-bold">{author?.nickname ?? "?"}</span>
+          {current.phrase ? <>: <span className="italic">&ldquo;{current.phrase}&rdquo;</span></> : <span className="italic"> 🎤 voice recording</span>}
+        </p>
+      )}
+    </Card>
+  );
 }
 
 function Submit({ code, round, playerToken, playerId, submissions }: {

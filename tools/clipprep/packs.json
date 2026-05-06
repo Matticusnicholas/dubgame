@@ -10,5 +10,11 @@
     "label": "Fast Food Drama",
     "query": "fast food customer freakout",
     "target_count": 25
+  },
+  {
+    "pack": "yt_roadrage",
+    "label": "Road Rage",
+    "query": "road rage caught on camera",
+    "target_count": 25
   }
 ]

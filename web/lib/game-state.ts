@@ -25,13 +25,28 @@ export const GameRow = z.object({
   played_clip_ids: z.array(z.string()),
   created_at: z.string(),
   package: z.string().default("notld"),
+  is_public: z.boolean().default(false),
+  lobby_title: z.string().nullable().optional(),
 });
 export type GameRow = z.infer<typeof GameRow>;
+
+export const MessageRow = z.object({
+  id: z.string().uuid(),
+  game_id: z.string().uuid(),
+  player_id: z.string().uuid().nullable(),
+  nickname: z.string().nullable(),
+  content: z.string(),
+  created_at: z.string(),
+});
+export type MessageRow = z.infer<typeof MessageRow>;
+
+export const MESSAGE_MAX_LEN = 280;
 
 export const PACK_CATALOG = [
   { id: "notld", label: "Night of the Living Dead", description: "1968 zombie classic, public domain" },
   { id: "yt_audits", label: "First Amendment Audits", description: "Recent YouTube Shorts (auto-refreshed weekly)" },
   { id: "yt_fastfood", label: "Fast Food Drama", description: "Public meltdowns at the drive-thru, weekly fresh" },
+  { id: "yt_roadrage", label: "Road Rage", description: "Dashcam meltdowns and parking lot beef, weekly fresh" },
 ] as const;
 export type PackId = (typeof PACK_CATALOG)[number]["id"];
 

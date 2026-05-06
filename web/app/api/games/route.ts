@@ -10,6 +10,8 @@ const Body = z.object({
   nickname: z.string().trim().min(1).max(20),
   custom_code: z.string().trim().toUpperCase().length(5).optional().or(z.literal("")),
   package: z.string().min(1).max(40).default("notld"),
+  is_public: z.boolean().default(false),
+  lobby_title: z.string().trim().max(60).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -44,6 +46,8 @@ export async function POST(req: NextRequest) {
         current_round: 0,
         total_rounds: body.total_rounds,
         package: body.package,
+        is_public: body.is_public,
+        lobby_title: body.lobby_title?.trim() || null,
       })
       .select("id, code")
       .single();

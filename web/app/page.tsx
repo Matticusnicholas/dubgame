@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { track } from "@vercel/analytics";
 import { isValidCode } from "@/lib/code";
 import { PACK_CATALOG } from "@/lib/game-state";
+import { LobbyBrowser } from "@/components/LobbyBrowser";
 
 export default function Home() {
   return (
@@ -21,6 +22,8 @@ function HomeInner() {
   const [hostNickname, setHostNickname] = useState("");
   const [customCode, setCustomCode] = useState("");
   const [pack, setPack] = useState<string>("notld");
+  const [isPublic, setIsPublic] = useState(false);
+  const [lobbyTitle, setLobbyTitle] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [nickname, setNickname] = useState("");
   const [joining, setJoining] = useState(false);
@@ -58,6 +61,8 @@ function HomeInner() {
         body: JSON.stringify({
           nickname: hostNickname.trim(),
           package: pack,
+          is_public: isPublic,
+          ...(isPublic && lobbyTitle.trim() ? { lobby_title: lobbyTitle.trim() } : {}),
           ...(trimmedCustom ? { custom_code: trimmedCustom } : {}),
         }),
       });
@@ -145,6 +150,32 @@ function HomeInner() {
                 {PACK_CATALOG.find((p) => p.id === pack)?.description}
               </span>
             </label>
+            <label className="flex items-start gap-3 cursor-pointer rounded-xl bg-black/40 px-4 py-3 hover:bg-black/50 transition">
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(e) => setIsPublic(e.target.checked)}
+                className="mt-1 accent-white"
+              />
+              <span className="flex-1">
+                <span className="block text-sm font-bold">🌐 Public lobby</span>
+                <span className="block text-xs opacity-60 mt-0.5">Show this game in the lobby browser so strangers can join</span>
+              </span>
+            </label>
+            {isPublic && (
+              <label className="flex flex-col gap-1">
+                <span className="text-xs uppercase tracking-wider opacity-60">
+                  Lobby title <span className="opacity-60 normal-case">(optional)</span>
+                </span>
+                <input
+                  value={lobbyTitle}
+                  onChange={(e) => setLobbyTitle(e.target.value.slice(0, 60))}
+                  maxLength={60}
+                  className="rounded-xl bg-black/40 px-4 py-3 outline-none focus:ring-2 focus:ring-white/40"
+                  placeholder="Friday night vibes"
+                />
+              </label>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-xs uppercase tracking-wider opacity-60">
                 Custom code <span className="opacity-60 normal-case">(optional)</span>
@@ -212,6 +243,8 @@ function HomeInner() {
       </div>
 
       {error && <p className="text-red-400 max-w-md text-center">{error}</p>}
+
+      <LobbyBrowser />
     </main>
   );
 }

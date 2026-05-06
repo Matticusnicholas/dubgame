@@ -1,19 +1,25 @@
 import type { NextConfig } from "next";
 
+const HEAVY_CLIENT_DEPS = [
+  "**/node_modules/onnxruntime-node/**",
+  "**/node_modules/onnxruntime-web/**",
+  "**/node_modules/@huggingface/**",
+  "**/node_modules/kokoro-js/**",
+  "**/node_modules/@ffmpeg/**",
+  "**/node_modules/@img/**",
+  "**/node_modules/sharp/**",
+];
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // Kokoro / transformers / onnxruntime-node are dynamically imported and only
-  // used client-side. Without this, Next's tracer pulls them into the server
-  // bundle for /host/[code], blowing past Vercel's 250 MB function size limit.
+  // Big client-only deps (TTS engine, ffmpeg.wasm) get dynamically imported
+  // in browser code. Without this, Next's tracer pulls them into the server
+  // bundle for every page that touches the import chain, blowing past
+  // Vercel's 250 MB serverless function limit.
   outputFileTracingExcludes: {
-    "/host/[code]": [
-      "**/node_modules/onnxruntime-node/**",
-      "**/node_modules/onnxruntime-web/**",
-      "**/node_modules/@huggingface/**",
-      "**/node_modules/kokoro-js/**",
-      "**/node_modules/@img/**",
-      "**/node_modules/sharp/**",
-    ],
+    "/host/[code]": HEAVY_CLIENT_DEPS,
+    "/play/[code]": HEAVY_CLIENT_DEPS,
+    "/solo": HEAVY_CLIENT_DEPS,
   },
   async headers() {
     return [

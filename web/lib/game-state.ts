@@ -31,6 +31,7 @@ export type GameRow = z.infer<typeof GameRow>;
 export const PACK_CATALOG = [
   { id: "notld", label: "Night of the Living Dead", description: "1968 zombie classic, public domain" },
   { id: "yt_audits", label: "First Amendment Audits", description: "Recent YouTube Shorts (auto-refreshed weekly)" },
+  { id: "yt_fastfood", label: "Fast Food Drama", description: "Public meltdowns at the drive-thru, weekly fresh" },
 ] as const;
 export type PackId = (typeof PACK_CATALOG)[number]["id"];
 

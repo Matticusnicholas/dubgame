@@ -1,0 +1,14 @@
+[
+  {
+    "pack": "yt_audits",
+    "label": "First Amendment Audits",
+    "query": "first amendment audit",
+    "target_count": 25
+  },
+  {
+    "pack": "yt_fastfood",
+    "label": "Fast Food Drama",
+    "query": "fast food customer freakout",
+    "target_count": 25
+  }
+]

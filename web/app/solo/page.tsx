@@ -23,6 +23,8 @@ export default function SoloPage() {
   const [recording, setRecording] = useState<RecordedVoice | null>(null);
 
   const [playToken, setPlayToken] = useState<string | null>(null);
+  const [playMode, setPlayMode] = useState<"preview" | "dub">("preview");
+  const playModeRef = useRef<"preview" | "dub">("preview");
   const [speaking, setSpeaking] = useState(false);
   const speakingRef = useRef(false);
   const wasPausedRef = useRef(false);
@@ -86,6 +88,19 @@ export default function SoloPage() {
     }
   }
 
+  function previewClip() {
+    if (!clip) return;
+    setError(null);
+    cancelSpeech();
+    speakingRef.current = false;
+    setSpeaking(false);
+    wasPausedRef.current = false;
+    playGenRef.current += 1;
+    playModeRef.current = "preview";
+    setPlayMode("preview");
+    setPlayToken(`preview-${Date.now()}`);
+  }
+
   async function dubIt() {
     if (!clip) return;
     if (!phrase.trim() && !recording) {
@@ -93,13 +108,20 @@ export default function SoloPage() {
       return;
     }
     setError(null);
+    cancelSpeech();
+    speakingRef.current = false;
+    setSpeaking(false);
+    wasPausedRef.current = false;
     track("solo_dub_played", { pack, voice, with_recording: recording ? 1 : 0 });
     playGenRef.current += 1;
-    setPlayToken(`solo-${Date.now()}`);
+    playModeRef.current = "dub";
+    setPlayMode("dub");
+    setPlayToken(`dub-${Date.now()}`);
   }
 
   async function onMuteEnter() {
     if (!clip) return;
+    if (playModeRef.current !== "dub") return; // preview mode: just play through the muted gap silently
     const gen = playGenRef.current;
     speakingRef.current = true;
     setSpeaking(true);
@@ -252,19 +274,28 @@ export default function SoloPage() {
 
           <VoiceRecorder value={recording} onChange={setRecording} />
 
-          <div className="flex gap-2 mt-2">
+          <div className="flex flex-col gap-2 mt-2">
+            <div className="flex gap-2">
+              <button
+                onClick={previewClip}
+                className="flex-1 rounded-xl bg-white/10 hover:bg-white/20 font-bold py-3"
+              >
+                ▶ Preview clip
+              </button>
+              <button
+                onClick={() => loadRandomClip(pack, true)}
+                className="rounded-xl bg-white/10 hover:bg-white/20 font-bold py-3 px-5"
+                title="Skip to a different random clip"
+              >
+                ⏭ Next clip
+              </button>
+            </div>
             <button
               onClick={dubIt}
               disabled={!phrase.trim() && !recording}
-              className="flex-1 rounded-xl bg-white text-black font-bold py-3"
+              className="rounded-xl bg-white text-black font-bold py-3"
             >
-              ▶ Play my dub
-            </button>
-            <button
-              onClick={() => loadRandomClip(pack, true)}
-              className="rounded-xl bg-white/10 hover:bg-white/20 font-bold py-3 px-5"
-            >
-              ⏭ Next clip
+              🎬 Play with my dub
             </button>
           </div>
 

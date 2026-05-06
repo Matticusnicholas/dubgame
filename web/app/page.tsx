@@ -118,15 +118,9 @@ function HomeInner() {
       <header className="text-center space-y-3">
         <h1 className="text-5xl font-black tracking-tight">Stupid Dubbing</h1>
         <p className="text-lg opacity-70">Watch a clip. The dialogue is muted. Make it up. The funniest one wins.</p>
-        <a
-          href="/solo"
-          className="inline-block mt-2 text-sm rounded-full border border-white/20 bg-white/5 hover:bg-white/10 px-4 py-2"
-        >
-          🎯 Try solo mode (no friends needed)
-        </a>
       </header>
 
-      <div className="grid md:grid-cols-2 gap-8 w-full max-w-3xl">
+      <div className="grid md:grid-cols-3 gap-6 w-full max-w-5xl">
         <section className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-4">
           <h2 className="text-2xl font-bold">Host a game</h2>
           <p className="text-sm opacity-70">Open this on the big screen / TV / laptop with speakers. You'll play along too.</p>
@@ -207,6 +201,17 @@ function HomeInner() {
               {hosting ? "Starting…" : "Host"}
             </button>
           </form>
+        </section>
+
+        <section className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-4">
+          <h2 className="text-2xl font-bold">Solo</h2>
+          <p className="text-sm opacity-70">Just want to dub some clips? No friends, no signup, no scoring — just you and a bunch of muted videos.</p>
+          <a
+            href="/solo"
+            className="mt-auto block text-center w-full rounded-xl bg-white/15 hover:bg-white/25 font-bold py-3"
+          >
+            🎯 Play solo
+          </a>
         </section>
 
         <section className="rounded-2xl border border-white/10 bg-white/5 p-6 flex flex-col gap-4">

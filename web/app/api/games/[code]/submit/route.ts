@@ -77,8 +77,16 @@ export async function POST(
     if (uploadErr) {
       return NextResponse.json({ error: `voice upload failed: ${uploadErr.message}` }, { status: 500 });
     }
-    const { data: pub } = sb.storage.from(VOICE_BUCKET).getPublicUrl(path);
-    voiceUrl = pub.publicUrl;
+    // Use a short-lived signed URL instead of a public URL so the bucket can
+    // stay private. 24h is well past any realistic game session — and game-
+    // end cleanup deletes the underlying file regardless.
+    const { data: signed, error: signErr } = await sb.storage
+      .from(VOICE_BUCKET)
+      .createSignedUrl(path, 60 * 60 * 24);
+    if (signErr || !signed?.signedUrl) {
+      return NextResponse.json({ error: `voice signing failed: ${signErr?.message ?? "no url"}` }, { status: 500 });
+    }
+    voiceUrl = signed.signedUrl;
   }
 
   const { error: insertErr } = await sb.from("submissions").upsert(

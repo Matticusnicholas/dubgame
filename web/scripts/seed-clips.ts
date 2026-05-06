@@ -103,12 +103,12 @@ async function main() {
     process.exit(1);
   }
 
-  // Prune any DB rows whose id isn't in the current manifest. We also have to
-  // delete any game that references a stale clip (FK constraint), since those
-  // games would crash when the host hits "advance" and tries to play a clip
-  // whose mp4 no longer exists.
+  // Prune stale rows in *this pack only* (manifest is local mp4 = 'notld').
+  // Without the package scope, a re-seed of the public-domain pack would also
+  // wipe every YouTube-pack clip in the DB.
+  const SEED_PACKAGE = "notld";
   const keepIds = new Set(rows.map((r) => r.id));
-  const { data: existing } = await sb.from("clips").select("id");
+  const { data: existing } = await sb.from("clips").select("id").eq("package", SEED_PACKAGE);
   const stale = (existing ?? []).filter((r) => !keepIds.has(r.id)).map((r) => r.id);
   if (stale.length > 0) {
     // Find games referencing a stale clip via current_clip_id or played_clip_ids.

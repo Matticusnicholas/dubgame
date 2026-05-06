@@ -348,8 +348,23 @@ QUALITY_PRESETS = {
 }
 
 
-def extract_clip(source: Path, start: float, duration: float, target: Path, quality: str = "high") -> None:
-    """ffmpeg cut: re-encode for an exact start position and faststart for streaming."""
+def extract_clip(
+    source: Path,
+    start: float,
+    duration: float,
+    target: Path,
+    quality: str = "high",
+    mute_start_s: float | None = None,
+    mute_end_s: float | None = None,
+) -> None:
+    """Cut a clip with audio MUTE BAKED IN between [mute_start_s, mute_end_s]
+    relative to the clip start.
+
+    Baking the mute into the file (instead of client-side volume=0) is the only
+    secure approach — anyone with DevTools can flip a boolean to recover audio
+    that's only muted at playback time. Once the audio is genuinely silent in
+    the file, no client-side trick can reveal the original dialogue.
+    """
     target.parent.mkdir(parents=True, exist_ok=True)
     crf, scale, abitrate, achannels = QUALITY_PRESETS[quality]
     cmd = [
@@ -363,6 +378,14 @@ def extract_clip(source: Path, start: float, duration: float, target: Path, qual
     ]
     if scale:
         cmd += ["-vf", scale]
+    # Audio filters: mute between [mute_start, mute_end] with tiny fades to avoid clicks.
+    if mute_start_s is not None and mute_end_s is not None and mute_end_s > mute_start_s:
+        afilter = (
+            f"volume=enable='between(t,{mute_start_s:.3f},{mute_end_s:.3f})':volume=0,"
+            f"afade=t=out:st={mute_start_s:.3f}:d=0.04,"
+            f"afade=t=in:st={mute_end_s:.3f}:d=0.04"
+        )
+        cmd += ["-af", afilter]
     cmd += [
         "-c:a", "aac",
         "-b:a", abitrate,
@@ -509,7 +532,15 @@ def main(argv: list[str] | None = None) -> int:
         target = output_dir / clip_file
         next_idx += 1
 
-        extract_clip(media_path, clip_start, CLIP_DURATION_S, target, quality=args.quality)
+        extract_clip(
+            media_path,
+            clip_start,
+            CLIP_DURATION_S,
+            target,
+            quality=args.quality,
+            mute_start_s=mute_abs_start - clip_start,
+            mute_end_s=mute_abs_end - clip_start,
+        )
 
         mute_start_ms = int(round((mute_abs_start - clip_start) * 1000))
         mute_end_ms = int(round((mute_abs_end - clip_start) * 1000))

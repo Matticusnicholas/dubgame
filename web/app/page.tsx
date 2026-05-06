@@ -118,6 +118,12 @@ function HomeInner() {
       <header className="text-center space-y-3">
         <h1 className="text-5xl font-black tracking-tight">Stupid Dubbing</h1>
         <p className="text-lg opacity-70">Watch a clip. The dialogue is muted. Make it up. The funniest one wins.</p>
+        <a
+          href="/solo"
+          className="inline-block mt-2 text-sm rounded-full border border-white/20 bg-white/5 hover:bg-white/10 px-4 py-2"
+        >
+          🎯 Try solo mode (no friends needed)
+        </a>
       </header>
 
       <div className="grid md:grid-cols-2 gap-8 w-full max-w-3xl">

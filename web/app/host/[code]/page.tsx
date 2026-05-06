@@ -18,7 +18,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { computeWinnersPerRound, type RoundWinner } from "@/lib/winners";
 import { getBrowserClient } from "@/lib/supabase-browser";
 import { getSeenClipIds, appendSeenClipIds } from "@/lib/seen-clips";
-import type { SubmissionRow, ClipRow } from "@/lib/game-state";
+import type { SubmissionRow, ClipRow, PlayerRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 
 export default function HostPage(props: { params: Promise<{ code: string }> }) {
@@ -932,7 +932,7 @@ function FinishedSection(props: {
   playedClipIds: string[];
   submissions: SubmissionRow[];
   votes: { id: string; game_id: string; round: number; voter_id: string; voted_for_submission_id: string }[];
-  players: { id: string; game_id: string; player_token: string; nickname: string; score: number; joined_at: string }[];
+  players: PlayerRow[];
   onPlayAgain: () => void;
   disabled: boolean;
   useKokoro: boolean;

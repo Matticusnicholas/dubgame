@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { generateGameCode, generateToken, isValidCode } from "@/lib/code";
 import { getAdminClient } from "@/lib/supabase-server";
+import { getClientIp, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,12 @@ const Body = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // Throttle game creation: 10 games / minute / IP.
+  const ip = getClientIp(req.headers);
+  if (!rateLimit(`create-game:${ip}`, 10, 60_000)) {
+    return NextResponse.json({ error: "Slow down — too many games created from this IP" }, { status: 429 });
+  }
+
   let body: z.infer<typeof Body>;
   try {
     body = Body.parse(await req.json().catch(() => ({})));

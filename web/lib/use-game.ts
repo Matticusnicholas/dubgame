@@ -25,12 +25,18 @@ export function useGame(code: string): GameSnapshot & { refresh: () => Promise<v
   const gameIdRef = useRef<string | null>(null);
   const clipIdRef = useRef<string | null>(null);
 
+  // Explicit column lists — the anon role no longer has column access to
+  // host_token / player_token (security migration 0010), so a bare select(*)
+  // would error.
+  const GAME_COLS = "id, code, state, current_round, total_rounds, current_clip_id, played_clip_ids, package, is_public, lobby_title, play_token, current_reveal_submission_id, created_at";
+  const PLAYER_COLS = "id, game_id, nickname, score, joined_at";
+
   const refresh = useCallback(async () => {
     const sb = getBrowserClient();
     setError(null);
     const { data: g, error: gErr } = await sb
       .from("games")
-      .select("*")
+      .select(GAME_COLS)
       .eq("code", code)
       .maybeSingle();
     if (gErr) {
@@ -47,7 +53,7 @@ export function useGame(code: string): GameSnapshot & { refresh: () => Promise<v
     gameIdRef.current = g.id;
 
     const [{ data: pls }, { data: subs }, { data: vs }] = await Promise.all([
-      sb.from("players").select("*").eq("game_id", g.id),
+      sb.from("players").select(PLAYER_COLS).eq("game_id", g.id),
       sb.from("submissions").select("*").eq("game_id", g.id),
       sb.from("votes").select("*").eq("game_id", g.id),
     ]);
@@ -87,7 +93,7 @@ export function useGame(code: string): GameSnapshot & { refresh: () => Promise<v
         }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "players", filter: `game_id=eq.${gameId}` }, () => {
-        void sb.from("players").select("*").eq("game_id", gameId).then(({ data }) => {
+        void sb.from("players").select(PLAYER_COLS).eq("game_id", gameId).then(({ data }) => {
           setPlayers((data ?? []) as PlayerRow[]);
         });
       })

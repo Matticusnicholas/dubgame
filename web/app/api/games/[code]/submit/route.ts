@@ -4,6 +4,7 @@ import { isValidCode } from "@/lib/code";
 import { getAdminClient } from "@/lib/supabase-server";
 import { badRequest, conflict, requirePlayer } from "@/lib/api-helpers";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
+import { getClientIp, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,13 @@ export async function POST(
 ) {
   const { code } = await context.params;
   if (!isValidCode(code)) return badRequest("Invalid game code");
+
+  // Throttle voice uploads especially. 60 submits / minute / IP is plenty for
+  // legitimate gameplay edits and stops a runaway client from spamming Storage.
+  const ip = getClientIp(req.headers);
+  if (!rateLimit(`submit:${ip}`, 60, 60_000)) {
+    return NextResponse.json({ error: "Rate limited — wait a moment" }, { status: 429 });
+  }
 
   // Accept either application/json (text-only) or multipart/form-data (text + voice blob).
   const contentType = req.headers.get("content-type") ?? "";

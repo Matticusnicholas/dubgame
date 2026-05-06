@@ -17,7 +17,8 @@ export const PHRASE_MAX_LEN = 80;
 export const GameRow = z.object({
   id: z.string().uuid(),
   code: z.string().length(5),
-  host_token: z.string(),
+  // host_token is server-side-only after migration 0010; clients never see it.
+  host_token: z.string().optional(),
   state: z.enum(GAME_STATES),
   current_round: z.number().int().nonnegative(),
   total_rounds: z.number().int().positive(),
@@ -55,7 +56,8 @@ export type PackId = (typeof PACK_CATALOG)[number]["id"];
 export const PlayerRow = z.object({
   id: z.string().uuid(),
   game_id: z.string().uuid(),
-  player_token: z.string(),
+  // player_token is server-side-only after migration 0010; clients never see it.
+  player_token: z.string().optional(),
   nickname: z.string(),
   score: z.number().int(),
   joined_at: z.string(),

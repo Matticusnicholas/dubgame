@@ -9,6 +9,7 @@ const Body = z.object({
   total_rounds: z.number().int().min(1).max(20).default(10),
   nickname: z.string().trim().min(1).max(20),
   custom_code: z.string().trim().toUpperCase().length(5).optional().or(z.literal("")),
+  package: z.string().min(1).max(40).default("notld"),
 });
 
 export async function POST(req: NextRequest) {
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
         state: "lobby",
         current_round: 0,
         total_rounds: body.total_rounds,
+        package: body.package,
       })
       .select("id, code")
       .single();
@@ -63,6 +65,7 @@ export async function POST(req: NextRequest) {
           state: "lobby",
           current_round: 0,
           total_rounds: body.total_rounds,
+          package: body.package,
         })
         .select("id, code")
         .single();

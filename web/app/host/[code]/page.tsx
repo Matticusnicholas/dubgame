@@ -5,7 +5,7 @@ import { track } from "@vercel/analytics";
 import { QRCodeSVG } from "qrcode.react";
 import { useGame } from "@/lib/use-game";
 import { clipPublicUrl } from "@/lib/supabase-browser";
-import { ClipPlayer } from "@/components/ClipPlayer";
+import { UniversalClipPlayer, type UniversalClipPlayerHandle } from "@/components/UniversalClipPlayer";
 import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
 import { loadKokoro, isKokoroLoaded, type KokoroProgress } from "@/lib/tts-kokoro";
 import { prefetchSubmission, playSubmission } from "@/lib/tts-prefetch";
@@ -15,9 +15,8 @@ import { IntroOverlay, shouldShowIntro } from "@/components/IntroOverlay";
 import { HighlightReel } from "@/components/HighlightReel";
 import { computeWinnersPerRound, type RoundWinner } from "@/lib/winners";
 import { getBrowserClient } from "@/lib/supabase-browser";
-import type { ClipRow } from "@/lib/game-state";
 import { getSeenClipIds, appendSeenClipIds } from "@/lib/seen-clips";
-import type { SubmissionRow } from "@/lib/game-state";
+import type { SubmissionRow, ClipRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 
 export default function HostPage(props: { params: Promise<{ code: string }> }) {
@@ -247,10 +246,8 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           code={code}
           submissions={submissions.filter((s) => s.round === game.current_round)}
           playerCount={players.length}
+          clip={clip}
           clipSrc={clipPublicUrl(clip.file_path)}
-          muteStartMs={clip.mute_start_ms}
-          muteEndMs={clip.mute_end_ms}
-          subtitles={clip.subtitles ?? []}
           onContinue={advance}
           continueDisabled={actionInFlight}
           playerToken={playerToken}
@@ -265,10 +262,8 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
         <RevealHost
           submissions={submissions.filter((s) => s.round === game.current_round)}
           players={players}
+          clip={clip}
           clipSrc={clipPublicUrl(clip.file_path)}
-          muteStartMs={clip.mute_start_ms}
-          muteEndMs={clip.mute_end_ms}
-          subtitles={clip.subtitles ?? []}
           onDone={advance}
           doneDisabled={actionInFlight}
           useKokoro={kokoroEnabled && kokoroState === "ready"}
@@ -438,10 +433,8 @@ function SubmittingHost(props: {
   code: string;
   submissions: SubmissionRow[];
   playerCount: number;
+  clip: ClipRow;
   clipSrc: string;
-  muteStartMs: number;
-  muteEndMs: number;
-  subtitles: Array<{ start_ms: number; end_ms: number; text: string }>;
   onContinue: () => void;
   continueDisabled: boolean;
   playerToken: string | null;
@@ -486,13 +479,11 @@ function SubmittingHost(props: {
     <section className="grid md:grid-cols-[2fr_1fr] gap-6">
       <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black relative">
         {showIntro && <IntroOverlay onDone={() => setShowIntro(false)} />}
-        <ClipPlayer
+        <UniversalClipPlayer
+          clip={props.clip}
           src={props.clipSrc}
-          muteStartMs={props.muteStartMs}
-          muteEndMs={props.muteEndMs}
           playToken={playToken}
           onEnded={onEnded}
-          subtitles={props.subtitles}
           muteOverlay={
             <div className="bg-black/80 px-8 py-4 rounded-2xl text-3xl md:text-5xl font-black tracking-wider animate-pulse">
               🔇  DUB THIS PART
@@ -650,10 +641,8 @@ function HostSubmitForm(props: {
 function RevealHost(props: {
   submissions: SubmissionRow[];
   players: { id: string; nickname: string }[];
+  clip: ClipRow;
   clipSrc: string;
-  muteStartMs: number;
-  muteEndMs: number;
-  subtitles: Array<{ start_ms: number; end_ms: number; text: string }>;
   onDone: () => void;
   doneDisabled: boolean;
   useKokoro: boolean;
@@ -664,7 +653,8 @@ function RevealHost(props: {
   const [speaking, setSpeaking] = useState(false);
   const playGenerationRef = useRef(0);
   const speakingRef = useRef(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<UniversalClipPlayerHandle>(null);
+  const wasPausedRef = useRef(false);
   const current = props.submissions[idx] ?? null;
 
   useEffect(() => {
@@ -700,10 +690,9 @@ function RevealHost(props: {
     speakingRef.current = false;
     setSpeaking(false);
     // If we paused at mute_end waiting for TTS, resume now.
-    const video = videoRef.current;
-    if (video && video.paused && video.currentTime * 1000 >= props.muteEndMs - 50) {
-      video.volume = 1;
-      void video.play();
+    if (wasPausedRef.current) {
+      wasPausedRef.current = false;
+      playerRef.current?.play();
     }
   }
 
@@ -711,9 +700,8 @@ function RevealHost(props: {
   // freeze on this last frame until it finishes; otherwise let the video continue.
   function onMuteExit() {
     if (!speakingRef.current) return;
-    const video = videoRef.current;
-    if (!video) return;
-    video.pause();
+    wasPausedRef.current = true;
+    playerRef.current?.pause();
   }
 
   function playCurrent() {
@@ -748,15 +736,13 @@ function RevealHost(props: {
   return (
     <section className="grid md:grid-cols-[2fr_1fr] gap-6">
       <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black relative">
-        <ClipPlayer
-          ref={videoRef}
+        <UniversalClipPlayer
+          ref={playerRef}
+          clip={props.clip}
           src={props.clipSrc}
-          muteStartMs={props.muteStartMs}
-          muteEndMs={props.muteEndMs}
           onMuteEnter={onMuteEnter}
           onMuteExit={onMuteExit}
           playToken={playToken}
-          subtitles={props.subtitles}
         />
         {playToken == null && (
           <button

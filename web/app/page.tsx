@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { track } from "@vercel/analytics";
 import { isValidCode } from "@/lib/code";
+import { PACK_CATALOG } from "@/lib/game-state";
 
 export default function Home() {
   return (
@@ -19,6 +20,7 @@ function HomeInner() {
   const [hosting, setHosting] = useState(false);
   const [hostNickname, setHostNickname] = useState("");
   const [customCode, setCustomCode] = useState("");
+  const [pack, setPack] = useState<string>("notld");
   const [joinCode, setJoinCode] = useState("");
   const [nickname, setNickname] = useState("");
   const [joining, setJoining] = useState(false);
@@ -55,6 +57,7 @@ function HomeInner() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           nickname: hostNickname.trim(),
+          package: pack,
           ...(trimmedCustom ? { custom_code: trimmedCustom } : {}),
         }),
       });
@@ -126,6 +129,21 @@ function HomeInner() {
                 className="rounded-xl bg-black/40 px-4 py-3 outline-none focus:ring-2 focus:ring-white/40"
                 placeholder="your name"
               />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs uppercase tracking-wider opacity-60">Clip pack</span>
+              <select
+                value={pack}
+                onChange={(e) => setPack(e.target.value)}
+                className="rounded-xl bg-black/40 px-4 py-3 outline-none focus:ring-2 focus:ring-white/40 appearance-none"
+              >
+                {PACK_CATALOG.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+              <span className="text-xs opacity-50">
+                {PACK_CATALOG.find((p) => p.id === pack)?.description}
+              </span>
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs uppercase tracking-wider opacity-60">

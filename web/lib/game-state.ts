@@ -24,8 +24,15 @@ export const GameRow = z.object({
   current_clip_id: z.string().nullable(),
   played_clip_ids: z.array(z.string()),
   created_at: z.string(),
+  package: z.string().default("notld"),
 });
 export type GameRow = z.infer<typeof GameRow>;
+
+export const PACK_CATALOG = [
+  { id: "notld", label: "Night of the Living Dead", description: "1968 zombie classic, public domain" },
+  { id: "yt_audits", label: "First Amendment Audits", description: "Recent YouTube Shorts (auto-refreshed weekly)" },
+] as const;
+export type PackId = (typeof PACK_CATALOG)[number]["id"];
 
 export const PlayerRow = z.object({
   id: z.string().uuid(),
@@ -71,5 +78,10 @@ export const ClipRow = z.object({
   mute_start_ms: z.number().int().nonnegative(),
   mute_end_ms: z.number().int().positive(),
   subtitles: z.array(SubtitleSegment).default([]),
+  package: z.string().default("notld"),
+  youtube_id: z.string().nullable().optional(),
+  title: z.string().nullable().optional(),
+  channel_name: z.string().nullable().optional(),
+  channel_url: z.string().nullable().optional(),
 });
 export type ClipRow = z.infer<typeof ClipRow>;

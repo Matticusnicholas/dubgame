@@ -13,12 +13,13 @@ export async function pickNextClip(
   _gameId: string,
   alreadyPlayed: string[],
   extraExclude: string[] = [],
+  pack: string = "notld",
 ): Promise<ClipRow | null> {
   const sb = getAdminClient();
   const fullExclude = Array.from(new Set([...alreadyPlayed, ...extraExclude]));
 
   const tryExclude = async (excluded: string[]): Promise<ClipRow[]> => {
-    const q = sb.from("clips").select("*");
+    const q = sb.from("clips").select("*").eq("package", pack);
     const { data, error } = excluded.length > 0
       ? await q.not("id", "in", inList(excluded))
       : await q;
@@ -26,15 +27,15 @@ export async function pickNextClip(
     return (data ?? []) as ClipRow[];
   };
 
-  // Tier 1: fully fresh
+  // Tier 1: fully fresh within pack
   let candidates = await tryExclude(fullExclude);
 
-  // Tier 2: relax to in-game-only dedup
+  // Tier 2: relax to in-game-only dedup, still within pack
   if (candidates.length === 0 && alreadyPlayed.length > 0) {
     candidates = await tryExclude(alreadyPlayed);
   }
 
-  // Tier 3: full pool (rollover)
+  // Tier 3: full pool of this pack (rollover)
   if (candidates.length === 0) {
     candidates = await tryExclude([]);
   }

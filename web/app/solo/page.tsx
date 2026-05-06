@@ -9,6 +9,8 @@ import { UniversalClipPlayer, type UniversalClipPlayerHandle } from "@/component
 import { VoicePicker } from "@/components/VoicePicker";
 import { VoiceRecorder, type RecordedVoice } from "@/components/VoiceRecorder";
 import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
+import { isKokoroLoaded, pickKokoroVoiceForVariant, speakWithKokoro } from "@/lib/tts-kokoro";
+import { KokoroToggle } from "@/components/KokoroToggle";
 import { getSeenClipIds, appendSeenClipIds } from "@/lib/seen-clips";
 import { buildDubbedClip, downloadBlob } from "@/lib/save-dub";
 
@@ -32,6 +34,7 @@ export default function SoloPage() {
   const playGenRef = useRef(0);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [kokoroReady, setKokoroReady] = useState(false);
 
   // Pack changes → fetch a fresh clip and reset all dub state
   useEffect(() => {
@@ -135,6 +138,9 @@ export default function SoloPage() {
           a.onerror = () => resolve();
         });
         URL.revokeObjectURL(url);
+      } else if (kokoroReady && isKokoroLoaded()) {
+        const k = pickKokoroVoiceForVariant(voice);
+        await speakWithKokoro(phrase.trim(), { voice: k.voice, rate: k.rate });
       } else {
         const browserVoice = await defaultVoice();
         const variant = resolveVoice(voice);
@@ -208,6 +214,10 @@ export default function SoloPage() {
             ))}
           </select>
         </label>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs uppercase tracking-wider opacity-60">Voice engine</span>
+          <KokoroToggle onChange={setKokoroReady} />
+        </div>
       </div>
 
       <div

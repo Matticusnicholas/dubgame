@@ -7,8 +7,9 @@ import { useGame } from "@/lib/use-game";
 import { clipPublicUrl } from "@/lib/supabase-browser";
 import { UniversalClipPlayer, type UniversalClipPlayerHandle } from "@/components/UniversalClipPlayer";
 import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";
-import { loadKokoro, isKokoroLoaded, type KokoroProgress } from "@/lib/tts-kokoro";
+import { isKokoroLoaded } from "@/lib/tts-kokoro";
 import { prefetchSubmission, playSubmission } from "@/lib/tts-prefetch";
+import { KokoroToggle } from "@/components/KokoroToggle";
 import { VoicePicker } from "@/components/VoicePicker";
 import { VoiceRecorder, type RecordedVoice } from "@/components/VoiceRecorder";
 import { IntroOverlay, shouldShowIntro } from "@/components/IntroOverlay";
@@ -29,9 +30,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
   const [actionInFlight, setActionInFlight] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [streamSafe, setStreamSafe] = useState(false);
-  const [kokoroEnabled, setKokoroEnabled] = useState(false);
-  const [kokoroState, setKokoroState] = useState<"off" | "loading" | "ready" | "error">("off");
-  const [kokoroProgress, setKokoroProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const [kokoroReady, setKokoroReady] = useState(false);
   const dubWindowRef = useRef<Window | null>(null);
 
   useEffect(() => {
@@ -39,11 +38,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
     setPlayerToken(localStorage.getItem(`player_token:${code}`));
     setPlayerId(localStorage.getItem(`player_id:${code}`));
     setStreamSafe(localStorage.getItem("stream_safe_mode") === "1");
-    if (localStorage.getItem("kokoro_enabled") === "1") {
-      setKokoroEnabled(true);
-      void enableKokoro(false);
-    }
-  }, [code]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [code]);
 
   // Fire `game_finished` exactly once per game when state transitions to finished.
   const finishedTrackedRef = useRef(false);
@@ -90,13 +85,13 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
   // Speculative Kokoro prefetch — kick off generation as soon as a submission
   // arrives or is edited, so the audio is already cooked by reveal time.
   useEffect(() => {
-    if (!kokoroEnabled || kokoroState !== "ready" || !game) return;
+    if (!kokoroReady || !game) return;
     const round = game.current_round;
     for (const s of submissions) {
       if (s.round !== round) continue;
       prefetchSubmission({ id: s.id, phrase: s.phrase, voice: s.voice });
     }
-  }, [submissions, kokoroEnabled, kokoroState, game?.current_round, game]);
+  }, [submissions, kokoroReady, game?.current_round, game]);
 
   function toggleStreamSafe() {
     setStreamSafe((prev) => {
@@ -104,38 +99,6 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
       localStorage.setItem("stream_safe_mode", next ? "1" : "0");
       return next;
     });
-  }
-
-  async function enableKokoro(askForConfirm: boolean) {
-    if (askForConfirm) {
-      const ok = window.confirm(
-        "Better voices use a higher-quality offline model. First time only, this will download about 80 MB. After that it's cached forever and works offline. Continue?",
-      );
-      if (!ok) return;
-    }
-    setKokoroEnabled(true);
-    setKokoroState("loading");
-    setKokoroProgress(null);
-    localStorage.setItem("kokoro_enabled", "1");
-    try {
-      await loadKokoro((p: KokoroProgress) => {
-        if (p.status === "downloading" && p.loaded != null && p.total != null) {
-          setKokoroProgress({ loaded: p.loaded, total: p.total });
-        }
-      });
-      setKokoroState("ready");
-      track("kokoro_enabled");
-    } catch (e) {
-      console.error("Kokoro load failed:", e);
-      setKokoroState("error");
-      track("kokoro_failed");
-    }
-  }
-
-  function disableKokoro() {
-    localStorage.setItem("kokoro_enabled", "0");
-    setKokoroEnabled(false);
-    setKokoroState("off");
   }
 
   function openDubWindow() {
@@ -250,13 +213,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           >
             🎭 Stream-safe {streamSafe ? "ON" : "OFF"}
           </button>
-          <KokoroToggle
-            enabled={kokoroEnabled}
-            state={kokoroState}
-            progress={kokoroProgress}
-            onEnable={() => enableKokoro(true)}
-            onDisable={disableKokoro}
-          />
+          <KokoroToggle onChange={setKokoroReady} />
           <div className="text-sm opacity-60">
             Round {game.current_round} / {game.total_rounds}
           </div>
@@ -300,7 +257,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           clipSrc={clipPublicUrl(clip.file_path)}
           onDone={advance}
           doneDisabled={actionInFlight}
-          useKokoro={kokoroEnabled && kokoroState === "ready"}
+          useKokoro={kokoroReady}
         />
       )}
 
@@ -339,7 +296,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           players={players}
           onPlayAgain={advance}
           disabled={actionInFlight}
-          useKokoro={kokoroEnabled && kokoroState === "ready"}
+          useKokoro={kokoroReady}
         />
       )}
 
@@ -361,47 +318,6 @@ async function playRecordedVoice(url: string): Promise<void> {
     audioEl.onended = () => resolve();
     audioEl.onerror = () => resolve();
   });
-}
-
-function KokoroToggle({
-  enabled,
-  state,
-  progress,
-  onEnable,
-  onDisable,
-}: {
-  enabled: boolean;
-  state: "off" | "loading" | "ready" | "error";
-  progress: { loaded: number; total: number } | null;
-  onEnable: () => void;
-  onDisable: () => void;
-}) {
-  const pct = progress && progress.total > 0 ? Math.round((progress.loaded / progress.total) * 100) : null;
-  let label = "🎙️ Better voices: OFF";
-  let title = "Use a higher-quality offline TTS model. First time downloads ~80 MB.";
-  if (enabled && state === "loading") {
-    label = pct != null ? `🎙️ Loading… ${pct}%` : "🎙️ Loading model…";
-    title = "Downloading the voice model — first time only.";
-  } else if (enabled && state === "ready") {
-    label = "🎙️ Better voices: ON";
-    title = "Using offline neural TTS. Click to switch back to browser voices.";
-  } else if (enabled && state === "error") {
-    label = "🎙️ Voice load failed";
-    title = "Click to retry.";
-  }
-  return (
-    <button
-      onClick={enabled && state === "ready" ? onDisable : onEnable}
-      className={`text-xs uppercase tracking-wider rounded-full border px-3 py-1.5 transition ${
-        enabled && state === "ready"
-          ? "border-white bg-white text-black font-bold"
-          : "border-white/20 hover:bg-white/10"
-      }`}
-      title={title}
-    >
-      {label}
-    </button>
-  );
 }
 
 function Lobby({ code, players, onStart, disabled, onKick }: { code: string; players: { id: string; nickname: string }[]; onStart: () => void; disabled: boolean; onKick: (playerId: string) => void }) {

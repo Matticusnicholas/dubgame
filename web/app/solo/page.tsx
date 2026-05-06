@@ -210,7 +210,20 @@ export default function SoloPage() {
         </label>
       </div>
 
-      <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black relative">
+      <div
+        onClick={() => !loadingClip && clip && previewClip()}
+        className={`aspect-video w-full rounded-2xl overflow-hidden bg-black relative ${
+          !loadingClip && clip ? "cursor-pointer" : ""
+        }`}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if ((e.key === "Enter" || e.key === " ") && clip) {
+            e.preventDefault();
+            previewClip();
+          }
+        }}
+      >
         {loadingClip && (
           <div className="absolute inset-0 flex items-center justify-center text-sm opacity-60">Loading clip…</div>
         )}
@@ -239,11 +252,17 @@ export default function SoloPage() {
                 href={clip.channel_url}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
                 className="absolute top-2 left-2 bg-black/70 hover:bg-black/90 px-3 py-1 rounded-full text-xs opacity-90"
                 title="Open the original creator's channel in a new tab"
               >
                 {clip.channel_name ? `📺 ${clip.channel_name}` : "📺 source"}
               </a>
+            )}
+            {playToken == null && !speaking && (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="bg-black/70 px-5 py-2.5 rounded-full text-base md:text-lg font-bold">▶ Tap to play</div>
+              </div>
             )}
           </>
         )}

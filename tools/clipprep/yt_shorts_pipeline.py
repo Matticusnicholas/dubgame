@@ -115,32 +115,96 @@ def parse_iso_duration(iso: str) -> float:
 
 # ---------- captions ----------
 
-def fetch_captions(video_id: str) -> list[CaptionWord]:
-    """Fetch auto-generated captions via youtube-transcript-api."""
-    from youtube_transcript_api import YouTubeTranscriptApi  # lazy import
+import subprocess
+import tempfile
+from pathlib import Path
 
-    try:
-        transcript = YouTubeTranscriptApi().fetch(video_id, languages=["en"])
-    except Exception as e:
-        print(f"  [skip] no captions for {video_id}: {type(e).__name__}")
-        return []
 
+def _parse_vtt_time(s: str) -> float:
+    s = s.strip().split(" ")[0]
+    parts = s.replace(",", ".").split(":")
+    if len(parts) == 3:
+        h, m, sec = parts
+        return int(h) * 3600 + int(m) * 60 + float(sec)
+    if len(parts) == 2:
+        m, sec = parts
+        return int(m) * 60 + float(sec)
+    return float(parts[0])
+
+
+def _parse_vtt(content: str) -> list[CaptionWord]:
+    """Spread each cue's text evenly across its time range to fake word-level timestamps."""
     words: list[CaptionWord] = []
-    for snippet in transcript:
-        # Each snippet covers a phrase. Spread its duration evenly over the words
-        # so we have something approximating word-level timestamps.
-        text = (snippet.text or "").strip()
-        if not text:
-            continue
+    cur_start = 0.0
+    cur_end = 0.0
+    cue_lines: list[str] = []
+
+    def flush_cue():
+        if cur_end <= cur_start or not cue_lines:
+            return
+        text = " ".join(cue_lines).strip()
+        text = re.sub(r"<[^>]+>", "", text)
+        text = re.sub(r"&[a-z]+;", "", text)
         toks = text.split()
         if not toks:
-            continue
-        per = max(0.05, snippet.duration / max(1, len(toks)))
-        t = float(snippet.start)
+            return
+        per = max(0.05, (cur_end - cur_start) / len(toks))
+        t = cur_start
         for tok in toks:
             words.append(CaptionWord(start=t, end=t + per, text=tok))
             t += per
+
+    for raw in content.split("\n"):
+        line = raw.strip()
+        if "-->" in line:
+            flush_cue()
+            cue_lines = []
+            parts = line.split(" --> ")
+            cur_start = _parse_vtt_time(parts[0])
+            cur_end = _parse_vtt_time(parts[1])
+        elif line == "" or line.startswith("WEBVTT") or line.startswith("NOTE") or line.isdigit():
+            if line == "":
+                flush_cue()
+                cue_lines = []
+        else:
+            cue_lines.append(line)
+    flush_cue()
     return words
+
+
+def fetch_captions(video_id: str) -> list[CaptionWord]:
+    """Fetch auto-generated captions via yt-dlp (skipping video download)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            subprocess.run(
+                [
+                    "yt-dlp",
+                    "--skip-download",
+                    "--write-auto-sub",
+                    "--sub-format", "vtt",
+                    "--sub-langs", "en,en-US,en-GB",
+                    "-o", f"{tmp}/%(id)s.%(ext)s",
+                    "--quiet",
+                    "--no-warnings",
+                    "--no-playlist",
+                    f"https://www.youtube.com/watch?v={video_id}",
+                ],
+                check=False,
+                capture_output=True,
+                timeout=45,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"  [skip] caption fetch timed out for {video_id}")
+            return []
+
+        vtt_files = list(Path(tmp).glob("*.vtt"))
+        if not vtt_files:
+            return []
+        try:
+            content = vtt_files[0].read_text(encoding="utf-8")
+        except Exception:
+            return []
+        return _parse_vtt(content)
 
 
 # ---------- mute window selection (mirrors prepare_movie.py) ----------

@@ -13,7 +13,7 @@ const Body = z.object({
   content: z.string().trim().min(1).max(MESSAGE_MAX_LEN),
 });
 
-const RATE_LIMIT_MS = 1000; // 1 message per second per player
+const RATE_LIMIT_MS = 250; // 4 messages per second per player — keeps spam tolerable but not stifling
 
 export async function POST(
   req: NextRequest,
@@ -71,8 +71,10 @@ export async function POST(
     return badRequest("player_token or host_token required");
   }
 
-  // Soft profanity scrub: hard slurs only. Real moderation belongs in a v2.
-  const content = scrubBlatantSlurs(body.content);
+  // No automatic content filter — the host can kick anyone abusing chat, which
+  // is the right shape of moderation for a small hobby game. If we ever need
+  // to add a filter for compliance/legal reasons we can re-introduce it here.
+  const content = body.content;
 
   const { error: insertErr } = await sb.from("messages").insert({
     game_id: game.id,
@@ -89,12 +91,3 @@ export async function POST(
   return NextResponse.json({ ok: true });
 }
 
-function scrubBlatantSlurs(s: string): string {
-  // Tiny baseline filter for the worst offenders. Real moderation goes elsewhere.
-  const blocked = ["nigger", "kike", "faggot", "retard"];
-  let out = s;
-  for (const w of blocked) {
-    out = out.replace(new RegExp(`\\b${w}s?\\b`, "gi"), "*".repeat(w.length));
-  }
-  return out;
-}

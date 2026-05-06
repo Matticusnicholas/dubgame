@@ -176,7 +176,7 @@ def fetch_captions(video_id: str) -> list[CaptionWord]:
     """Fetch auto-generated captions via yt-dlp (skipping video download)."""
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            subprocess.run(
+            result = subprocess.run(
                 [
                     "yt-dlp",
                     "--skip-download",
@@ -184,13 +184,12 @@ def fetch_captions(video_id: str) -> list[CaptionWord]:
                     "--sub-format", "vtt",
                     "--sub-langs", "en,en-US,en-GB",
                     "-o", f"{tmp}/%(id)s.%(ext)s",
-                    "--quiet",
-                    "--no-warnings",
                     "--no-playlist",
                     f"https://www.youtube.com/watch?v={video_id}",
                 ],
                 check=False,
                 capture_output=True,
+                text=True,
                 timeout=45,
             )
         except subprocess.TimeoutExpired:
@@ -199,6 +198,8 @@ def fetch_captions(video_id: str) -> list[CaptionWord]:
 
         vtt_files = list(Path(tmp).glob("*.vtt"))
         if not vtt_files:
+            stderr_short = (result.stderr or "")[:200].replace("\n", " ")
+            print(f"  [skip] no caption file for {video_id}: {stderr_short}")
             return []
         try:
             content = vtt_files[0].read_text(encoding="utf-8")

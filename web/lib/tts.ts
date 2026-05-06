@@ -8,18 +8,27 @@ export interface VoiceVariant {
   id: string;
   label: string;
   emoji: string;
+  /** Web Speech API rate when premium TTS is off. Premium ignores this — voices have their own character. */
   rate: number;
+  /** Web Speech API pitch when premium TTS is off. Premium ignores this. */
   pitch: number;
 }
 
+// Catalog matches Supertonic 2's pre-built speaker embeddings. When premium
+// TTS is on, each id loads the corresponding `.bin` from HF and synthesizes
+// with that voice. When off, browser Web Speech uses a default voice and
+// applies the rate/pitch tweaks below as a degraded gimmick fallback.
 export const VOICES: VoiceVariant[] = [
-  { id: "default",     label: "Default",     emoji: "🗣️", rate: 1.0, pitch: 1.0 },
-  { id: "robot",       label: "Robot",       emoji: "🤖", rate: 0.95, pitch: 0.5 },
-  { id: "demon",       label: "Demon",       emoji: "😈", rate: 0.7, pitch: 0.0 },
-  { id: "chipmunk",    label: "Chipmunk",    emoji: "🐿️", rate: 1.5, pitch: 2.0 },
-  { id: "old_man",     label: "Old Man",     emoji: "👴", rate: 0.7, pitch: 0.6 },
-  { id: "news_anchor", label: "News Anchor", emoji: "📰", rate: 1.15, pitch: 1.0 },
-  { id: "cursed_siri", label: "Cursed Siri", emoji: "📵", rate: 1.7, pitch: 1.7 },
+  { id: "F1", label: "F1", emoji: "👩", rate: 1.0,  pitch: 1.0 },
+  { id: "F2", label: "F2", emoji: "👩", rate: 1.0,  pitch: 1.1 },
+  { id: "F3", label: "F3", emoji: "👩", rate: 1.05, pitch: 1.4 },
+  { id: "F4", label: "F4", emoji: "👩", rate: 0.95, pitch: 0.9 },
+  { id: "F5", label: "F5", emoji: "👩", rate: 1.1,  pitch: 1.5 },
+  { id: "M1", label: "M1", emoji: "👨", rate: 1.0,  pitch: 1.0 },
+  { id: "M2", label: "M2", emoji: "👨", rate: 1.0,  pitch: 0.9 },
+  { id: "M3", label: "M3", emoji: "👨", rate: 0.95, pitch: 0.5 },
+  { id: "M4", label: "M4", emoji: "👨", rate: 1.05, pitch: 0.7 },
+  { id: "M5", label: "M5", emoji: "👨", rate: 0.9,  pitch: 0.3 },
 ];
 
 export const VOICE_RANDOM_ID = "random";

@@ -13,7 +13,27 @@
 // public ONNX export ships a single voice. If/when multi-voice variants land
 // upstream we can map variant -> speaker-id directly.
 
-const MODEL_ID = "onnx-community/Supertonic-TTS-ONNX";
+const MODEL_ID = "onnx-community/Supertonic-TTS-2-ONNX";
+
+// Supertonic 2 ships 10 speaker embeddings (.bin files) — 5 female F1-F5,
+// 5 male M1-M5. We load each on first use and cache forever.
+const VOICE_BIN_URL = (id: string) =>
+  `https://huggingface.co/${MODEL_ID}/resolve/main/voices/${id}.bin`;
+
+const SUPERTONIC_VOICES = ["F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"] as const;
+const FALLBACK_VOICE = "F1";
+
+const embeddingCache = new Map<string, Float32Array>();
+
+async function loadVoiceEmbedding(voiceId: string): Promise<Float32Array> {
+  const id = (SUPERTONIC_VOICES as readonly string[]).includes(voiceId) ? voiceId : FALLBACK_VOICE;
+  const cached = embeddingCache.get(id);
+  if (cached) return cached;
+  const buf = await (await fetch(VOICE_BIN_URL(id))).arrayBuffer();
+  const arr = new Float32Array(buf);
+  embeddingCache.set(id, arr);
+  return arr;
+}
 
 type Pipeline = (text: string, opts?: Record<string, unknown>) => Promise<{
   audio: Float32Array;
@@ -78,27 +98,31 @@ export function isKokoroLoaded(): boolean {
   return ttsInstance !== null;
 }
 
-// Map our voice variants to playback-rate adjustments. Supertonic 2's public
-// ONNX bundle is single-voice; pitch/speed manipulation in the browser yields
-// the chipmunk/demon/old-man character without needing multi-voice support.
-const VARIANT_TO_RATE: Record<string, number> = {
-  default:     1.00,
-  robot:       0.95,
-  demon:       0.70,
-  chipmunk:    1.55,
-  old_man:     0.78,
-  news_anchor: 1.05,
-  cursed_siri: 1.45,
+// Variant ID is now a Supertonic voice ID (F1..F5, M1..M5). We resolve any
+// legacy IDs (from before the catalog swap) to a sensible default.
+const LEGACY_VARIANT_TO_VOICE: Record<string, string> = {
+  default:     "F1",
+  robot:       "M5",
+  demon:       "M3",
+  chipmunk:    "F3",
+  old_man:     "M5",
+  news_anchor: "M2",
+  cursed_siri: "F5",
 };
 
 export function pickKokoroVoiceForVariant(variantId: string | null | undefined): { voice: string; rate: number } {
-  let id = variantId ?? "default";
-  if (id === "random") {
-    const pool = Object.keys(VARIANT_TO_RATE).filter((k) => k !== "default");
-    id = pool[Math.floor(Math.random() * pool.length)] ?? "default";
+  const raw = variantId ?? "F1";
+  if (raw === "random") {
+    const pick = SUPERTONIC_VOICES[Math.floor(Math.random() * SUPERTONIC_VOICES.length)];
+    return { voice: pick, rate: 1.0 };
   }
-  const rate = VARIANT_TO_RATE[id] ?? 1.0;
-  return { voice: id, rate };
+  // Direct hit on a Supertonic voice id
+  if ((SUPERTONIC_VOICES as readonly string[]).includes(raw)) {
+    return { voice: raw, rate: 1.0 };
+  }
+  // Map legacy variant ids (robot/demon/chipmunk/etc.) to Supertonic equivalents.
+  const mapped = LEGACY_VARIANT_TO_VOICE[raw] ?? FALLBACK_VOICE;
+  return { voice: mapped, rate: 1.0 };
 }
 
 // ---------- audio helpers ----------
@@ -145,9 +169,10 @@ function writeString(view: DataView, offset: number, str: string) {
 
 // ---------- public synthesis API ----------
 
-export async function generateKokoroBlob(text: string, _voice: string): Promise<Blob> {
+export async function generateKokoroBlob(text: string, voice: string): Promise<Blob> {
   const tts = await loadKokoro();
-  const out = await tts(text);
+  const embedding = await loadVoiceEmbedding(voice);
+  const out = await tts(text, { speaker_embeddings: embedding });
   return float32ToWavBlob(out.audio, out.sampling_rate);
 }
 

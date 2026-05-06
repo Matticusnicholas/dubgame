@@ -369,6 +369,13 @@ def existing_youtube_ids(supabase_url: str, supabase_key: str, package: str) -> 
 # ---------- main ----------
 
 def main() -> int:
+    # Force UTF-8 on stdout — Windows' default cp1252 chokes on emoji/Unicode in
+    # video titles when we print progress lines.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
     yt_key = os.environ.get("YT_API_KEY", "").strip()
     sb_url = os.environ.get("SUPABASE_URL", "").strip()
     sb_key = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()

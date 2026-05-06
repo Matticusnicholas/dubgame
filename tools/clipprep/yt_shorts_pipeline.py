@@ -179,6 +179,9 @@ def fetch_captions(video_id: str) -> list[CaptionWord]:
             result = subprocess.run(
                 [
                     "yt-dlp",
+                    # YouTube's player requires JS execution; use Node (ubiquitous on
+                    # GH runners and most dev machines).
+                    "--js-runtimes", "node",
                     "--skip-download",
                     "--write-auto-sub",
                     "--sub-format", "vtt",

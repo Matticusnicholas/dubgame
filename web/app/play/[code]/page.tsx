@@ -1,17 +1,19 @@
 "use client";
 
 import { use, useEffect, useMemo, useState } from "react";
-import { useGame } from "@/lib/use-game";
 import { track } from "@vercel/analytics";
 import type { SubmissionRow } from "@/lib/game-state";
 import { PHRASE_MAX_LEN } from "@/lib/game-state";
 import { VoicePicker } from "@/components/VoicePicker";
 import { VoiceRecorder, type RecordedVoice } from "@/components/VoiceRecorder";
 import { ChatPanel } from "@/components/ChatPanel";
+import { useGame } from "@/lib/use-game";
+import { clipPublicUrl } from "@/lib/supabase-browser";
+import { UniversalClipPlayer } from "@/components/UniversalClipPlayer";
 
 export default function PlayPage(props: { params: Promise<{ code: string }> }) {
   const { code } = use(props.params);
-  const { game, players, submissions, votes, loading, error } = useGame(code);
+  const { game, players, submissions, votes, clip, loading, error } = useGame(code);
   const [playerToken, setPlayerToken] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [nickname, setNickname] = useState<string | null>(null);
@@ -50,6 +52,24 @@ export default function PlayPage(props: { params: Promise<{ code: string }> }) {
           <p className="text-xl font-bold mb-2">Welcome, {me?.nickname ?? nickname}</p>
           <p className="opacity-70">Waiting for the host to start…</p>
           <p className="text-xs opacity-50 mt-4">{players.length} player{players.length === 1 ? "" : "s"} in lobby</p>
+        </Card>
+      )}
+
+      {game.state === "submitting" && clip && (
+        <Card>
+          <p className="text-xs uppercase tracking-widest opacity-60 mb-2">Watch the clip</p>
+          <div className="aspect-video w-full rounded-xl overflow-hidden bg-black">
+            <UniversalClipPlayer
+              clip={clip}
+              src={clipPublicUrl(clip.file_path)}
+              playToken={game.play_token ?? null}
+              muteOverlay={
+                <div className="bg-black/80 px-4 py-2 rounded-xl text-lg md:text-2xl font-black tracking-wider animate-pulse">
+                  🔇 DUB THIS PART
+                </div>
+              }
+            />
+          </div>
         </Card>
       )}
 

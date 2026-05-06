@@ -18,7 +18,7 @@ export interface UniversalClipPlayerProps {
   src: string;                         // resolved URL for the local-mp4 path
   onMuteEnter?: () => void;
   onMuteExit?: () => void;
-  playToken?: number | null;
+  playToken?: number | string | null;
   onEnded?: () => void;
   muteOverlay?: React.ReactNode;
   hideSubtitles?: boolean;

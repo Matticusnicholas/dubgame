@@ -152,6 +152,33 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
     dubWindowRef.current = w;
   }
 
+  async function broadcastPlay() {
+    if (!hostToken) return;
+    try {
+      await fetch(`/api/games/${code}/play`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ host_token: hostToken }),
+      });
+    } catch {
+      /* harmless on transient failure — user can click again */
+    }
+  }
+
+  async function kickPlayer(playerId: string) {
+    if (!hostToken) return;
+    if (!confirm("Kick this player out of the game?")) return;
+    try {
+      await fetch(`/api/games/${code}/kick`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ host_token: hostToken, player_id: playerId }),
+      });
+    } catch (e) {
+      console.error("kick failed:", e);
+    }
+  }
+
   async function start() {
     if (!hostToken) return;
     setActionError(null);
@@ -239,7 +266,7 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
       {actionError && <div className="mb-4 rounded-xl bg-red-900/40 border border-red-600/40 px-4 py-2 text-red-200">{actionError}</div>}
 
       {game.state === "lobby" && (
-        <Lobby code={code} players={players} onStart={start} disabled={actionInFlight || players.length < 1} />
+        <Lobby code={code} players={players} onStart={start} disabled={actionInFlight || players.length < 1} onKick={kickPlayer} />
       )}
 
       {game.state === "submitting" && clip && (
@@ -256,6 +283,8 @@ export default function HostPage(props: { params: Promise<{ code: string }> }) {
           round={game.current_round}
           streamSafe={streamSafe}
           onOpenDubWindow={openDubWindow}
+          broadcastPlayToken={game.play_token}
+          onPlayClick={broadcastPlay}
         />
       )}
 
@@ -371,7 +400,7 @@ function KokoroToggle({
   );
 }
 
-function Lobby({ code, players, onStart, disabled }: { code: string; players: { id: string; nickname: string }[]; onStart: () => void; disabled: boolean }) {
+function Lobby({ code, players, onStart, disabled, onKick }: { code: string; players: { id: string; nickname: string }[]; onStart: () => void; disabled: boolean; onKick: (playerId: string) => void }) {
   const [joinUrl, setJoinUrl] = useState<string>("");
 
   useEffect(() => {
@@ -417,8 +446,19 @@ function Lobby({ code, players, onStart, disabled }: { code: string; players: { 
           <p className="opacity-60">Waiting for someone to join…</p>
         ) : (
           <ul className="space-y-2">
-            {players.map((p) => (
-              <li key={p.id} className="rounded-xl bg-black/30 px-4 py-2">{p.nickname}</li>
+            {players.map((p, i) => (
+              <li key={p.id} className="rounded-xl bg-black/30 px-4 py-2 flex items-center justify-between gap-2">
+                <span>{p.nickname}{i === 0 ? " (host)" : ""}</span>
+                {i !== 0 && (
+                  <button
+                    onClick={() => onKick(p.id)}
+                    className="text-xs opacity-50 hover:opacity-100 hover:text-red-400"
+                    title="Kick this player"
+                  >
+                    ✕ kick
+                  </button>
+                )}
+              </li>
             ))}
           </ul>
         )}
@@ -447,9 +487,11 @@ function SubmittingHost(props: {
   round: number;
   streamSafe: boolean;
   onOpenDubWindow: () => void;
+  broadcastPlayToken?: string | null;
+  onPlayClick: () => void;
 }) {
   const PLAYS_PER_ROUND = 2;
-  const [playToken, setPlayToken] = useState<number | null>(null);
+  const [playToken, setPlayToken] = useState<string | null>(null);
   const [playsDone, setPlaysDone] = useState(0);
   // Show the intro on the very first round, unless dismissed-permanently.
   const [showIntro, setShowIntro] = useState<boolean>(false);
@@ -464,18 +506,25 @@ function SubmittingHost(props: {
     setPlaysDone(0);
   }, [props.clipSrc, props.round]);
 
+  // Sync to the broadcast play_token so clicking Play on the host triggers
+  // every connected device (including online players' phones).
+  useEffect(() => {
+    if (props.broadcastPlayToken && props.broadcastPlayToken !== playToken) {
+      setPlayToken(props.broadcastPlayToken);
+    }
+  }, [props.broadcastPlayToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function onEnded() {
     const next = playsDone + 1;
     setPlaysDone(next);
     if (next < PLAYS_PER_ROUND) {
-      // Tiny gap before the second play so the cut isn't jarring.
-      setTimeout(() => setPlayToken(Date.now()), 600);
+      setTimeout(() => props.onPlayClick(), 600);
     }
   }
 
   function startOrReplay() {
     setPlaysDone(0);
-    setPlayToken(Date.now());
+    void props.onPlayClick();
   }
 
   const playing = playToken != null && playsDone < PLAYS_PER_ROUND;

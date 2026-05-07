@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { track } from "@vercel/analytics";
+import { track } from "@/lib/track";
 import { getBrowserClient, clipPublicUrl } from "@/lib/supabase-browser";
 import { PACK_CATALOG, PHRASE_MAX_LEN, type ClipRow } from "@/lib/game-state";
 import { UniversalClipPlayer, type UniversalClipPlayerHandle } from "@/components/UniversalClipPlayer";

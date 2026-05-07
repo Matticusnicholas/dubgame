@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { track } from "@vercel/analytics";
+import { track } from "@/lib/track";
 import { QRCodeSVG } from "qrcode.react";
 import { useGame } from "@/lib/use-game";
 import { clipPublicUrl } from "@/lib/supabase-browser";

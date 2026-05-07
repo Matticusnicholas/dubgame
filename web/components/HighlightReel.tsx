@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { track } from "@vercel/analytics";
+import { track } from "@/lib/track";
 import type { RoundWinner } from "@/lib/winners";
 import { ClipPlayer } from "@/components/ClipPlayer";
 import { defaultVoice, speak, cancelSpeech, resolveVoice } from "@/lib/tts";

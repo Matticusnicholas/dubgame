@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { track } from "@vercel/analytics";
+import { track } from "@/lib/track";
 import { isKokoroLoaded, loadKokoro, type KokoroProgress } from "@/lib/tts-kokoro";
 
 const STORAGE_KEY = "kokoro_enabled";
